@@ -1,12 +1,23 @@
 use std::fmt;
 
 /// 运行时配置：NAS 地址、端口、访问令牌与证书校验开关。
-#[derive(Debug)]
 pub struct Config {
     pub host: String,
     pub port: u16,
     pub token: String,
     pub insecure: bool,
+}
+
+/// 手写 Debug：令牌一律脱敏，避免 `{:?}` / `dbg!` / 断言失败信息泄露明文。
+impl fmt::Debug for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Config")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("token", &redact(&self.token))
+            .field("insecure", &self.insecure)
+            .finish()
+    }
 }
 
 /// 配置解析失败的原因。
@@ -34,11 +45,13 @@ impl fmt::Display for ConfigError {
     }
 }
 
-/// 令牌脱敏：只保留前缀，其余用 **** 代替。
+/// 令牌脱敏：仅当首段是 `ugpoa` 方案前缀时保留它，其余一律 ****。
+///
+/// 非标准格式（如 `a.b.c`、`trailing.`）整体脱敏，避免回显用户输入的首段。
 pub fn redact(token: &str) -> String {
     match token.split_once('.') {
-        Some((head, _)) => format!("{head}.****"),
-        None => "****".to_string(),
+        Some((head, _)) if head.starts_with("ugpoa") => format!("{head}.****"),
+        _ => "****".to_string(),
     }
 }
 
