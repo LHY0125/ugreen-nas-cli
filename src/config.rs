@@ -9,6 +9,8 @@ pub struct Config {
 }
 
 /// 手写 Debug：令牌一律脱敏，避免 `{:?}` / `dbg!` / 断言失败信息泄露明文。
+///
+/// 注意：新增字段时需在此同步脱敏，否则会以明文出现在 Debug 输出中。
 impl fmt::Debug for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Config")
