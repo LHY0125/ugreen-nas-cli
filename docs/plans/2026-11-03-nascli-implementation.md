@@ -404,7 +404,7 @@ fn maps_field_numbers_to_names() {
     let mut m = Message::new();
     m.insert(3, Value::Bytes(b"/volume1/demo".to_vec()));
     m.insert(8, Value::Varint(50));
-    let j = to_json(&m, &s);
+    let j = s.message_to_json("demo.Req", &m);
     assert_eq!(j["path"], "/volume1/demo");
     assert_eq!(j["limit"], 50);
 }
@@ -414,7 +414,7 @@ fn resolves_enum_symbol() {
     let s = Schema::from_json_str(SAMPLE).unwrap();
     let mut m = Message::new();
     m.insert(16, Value::Varint(1));
-    assert_eq!(to_json(&m, &s)["mode"], "SAFE");
+    assert_eq!(s.message_to_json("demo.Req", &m)["mode"], "SAFE");
 }
 
 #[test]
@@ -1485,13 +1485,10 @@ Expected: 编译失败，`unresolved import nascli::commands`
 - [ ] **Step 3: 实现 `src/commands/mod.rs`**
 
 ```rust
-pub mod apps;
-pub mod docker;
-pub mod download;
-pub mod files;
-pub mod storage;
-pub mod system;
-pub mod users;
+// 各命令模块由后续任务逐个加入（Task 8 起），本任务不声明它们，否则无法编译：
+//   Task 8: pub mod storage;   Task 9: pub mod system;
+//   Task 10: pub mod docker;   Task 11: pub mod apps; pub mod users; pub mod download;
+//   Task 12: pub mod files;
 
 use crate::client::{ApiError, Client};
 use crate::schema::{is_read_only, Schema};
@@ -1499,7 +1496,6 @@ use crate::wire::Value;
 use serde_json::json;
 
 pub struct Ctx {
-    pub schema: Schema,
     pub client: Client,
 }
 
@@ -1788,7 +1784,7 @@ pub fn run(client: &Client, action: &str) -> Result<Message, ApiError> {
 
 ```rust
         Command::Storage { action } => {
-            let ctx = match build_ctx(&schema) {
+            let ctx = match build_ctx() {
                 Ok(c) => c,
                 Err(code) => return code,
             };
@@ -1812,7 +1808,7 @@ pub fn run(client: &Client, action: &str) -> Result<Message, ApiError> {
 `build_ctx` 实现：
 
 ```rust
-fn build_ctx(schema: &Schema) -> Result<Ctx, ExitCode> {
+fn build_ctx() -> Result<Ctx, ExitCode> {
     let cfg = Config::from_env().map_err(|e| {
         eprintln!("{e}");
         ExitCode::from(2)
@@ -1821,7 +1817,7 @@ fn build_ctx(schema: &Schema) -> Result<Ctx, ExitCode> {
         eprintln!("{e}");
         ExitCode::from(6)
     })?;
-    Ok(Ctx { schema: Schema::from_json_str(SCHEMA_JSON).unwrap(), client })
+    Ok(Ctx { client })
 }
 ```
 
@@ -1963,7 +1959,7 @@ pub fn run(client: &Client, socket: &str, method: &str) -> Result<Message, ApiEr
 
 ```rust
         Command::System { action } => {
-            let ctx = match build_ctx(&schema) { Ok(c) => c, Err(code) => return code };
+            let ctx = match build_ctx() { Ok(c) => c, Err(code) => return code };
             match nascli::commands::system::resolve_system(&action) {
                 Ok((socket, method)) => {
                     match ctx.client.call(socket, method, &BTreeMap::new()) {
@@ -1975,7 +1971,7 @@ pub fn run(client: &Client, socket: &str, method: &str) -> Result<Message, ApiEr
             }
         }
         Command::Network { action } => {
-            let ctx = match build_ctx(&schema) { Ok(c) => c, Err(code) => return code };
+            let ctx = match build_ctx() { Ok(c) => c, Err(code) => return code };
             match nascli::commands::system::resolve_network(&action) {
                 Ok((socket, method)) => {
                     match ctx.client.call(socket, method, &BTreeMap::new()) {
@@ -2122,7 +2118,7 @@ pub fn empty() -> Message {
                 eprintln!("{e}");
                 return ExitCode::from(2);
             }
-            let ctx = match build_ctx(&schema) { Ok(c) => c, Err(code) => return code };
+            let ctx = match build_ctx() { Ok(c) => c, Err(code) => return code };
             match ctx.client.call(socket, method, &BTreeMap::new()) {
                 Ok(resp) => { emit_ok(method, nascli::schema::to_json(&resp, &schema)); ExitCode::SUCCESS }
                 Err(e) => ExitCode::from(emit_err(&e) as u8),
@@ -2279,7 +2275,7 @@ pub fn resolve(action: &str) -> Result<(&'static str, &'static str, &'static str
                 Ok(v) => v,
                 Err(e) => { eprintln!("{e}"); return ExitCode::from(2); }
             };
-            let ctx = match build_ctx(&schema) { Ok(c) => c, Err(code) => return code };
+            let ctx = match build_ctx() { Ok(c) => c, Err(code) => return code };
             match ctx.client.call(socket, method, &BTreeMap::new()) {
                 Ok(resp) => { emit_ok(method, nascli::schema::to_json(&resp, &schema)); ExitCode::SUCCESS }
                 Err(e) => ExitCode::from(emit_err(&e) as u8),
@@ -2421,8 +2417,6 @@ use crate::wire::{Message, Value};
 use std::collections::BTreeMap;
 
 pub const SOCKET: &str = "ugreen.filemgr.internal.grpc";
-const FS: &str = "/ugidl.filesystem.Filesystem";
-const FILEMGR: &str = "/filemgr.Filemgr";
 
 /// 返回 (socket, method, operation)。
 /// `du` 与 `find` 因服务端流式而不可用，直接返回错误。
@@ -2458,7 +2452,6 @@ pub fn resolve(action: &str) -> Result<(&'static str, &'static str, &'static str
         }
         other => return Err(format!("未知的 fs 子命令：{other}")),
     };
-    let _ = (FS, FILEMGR);
     Ok((SOCKET, method, op))
 }
 
@@ -2546,7 +2539,7 @@ pub fn build_message(
                 Ok(m) => m,
                 Err(e) => { eprintln!("{e}"); return ExitCode::from(2); }
             };
-            let ctx = match build_ctx(&schema) { Ok(c) => c, Err(code) => return code };
+            let ctx = match build_ctx() { Ok(c) => c, Err(code) => return code };
             match ctx.client.call(socket, method, &msg) {
                 Ok(resp) => { emit_ok(method, nascli::schema::to_json(&resp, &schema)); ExitCode::SUCCESS }
                 Err(e) => ExitCode::from(emit_err(&e) as u8),
