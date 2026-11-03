@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use nascli::client::Client;
-use nascli::commands::{emit_err, emit_ok, parse_field, require_yes, Ctx};
+use nascli::commands::{emit_err, emit_ok, operation_of, parse_field, require_yes, Ctx};
 use nascli::config::Config;
 use nascli::schema::{is_read_only, Schema};
 use nascli::wire::Message;
@@ -98,8 +98,11 @@ fn main() -> ExitCode {
                 Ok(c) => c,
                 Err(code) => return code,
             };
-            let info = schema.method(&method);
-            let operation = info.map(|i| i.operation.as_str()).unwrap_or("read");
+            // 未知方法按写操作处理（fail-closed），并明确告知原因。
+            if schema.method(&method).is_none() {
+                eprintln!("提示：{method} 不在内置 schema 中，无法判定读写属性，已按写操作处理");
+            }
+            let operation = operation_of(&schema, &method);
             let detail = fields.join(" ");
             if let Err(e) = require_yes(operation, &method, &detail, yes) {
                 eprintln!("{e}");

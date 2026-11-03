@@ -4,7 +4,7 @@
 //   Task 12: pub mod files;
 
 use crate::client::{ApiError, Client};
-use crate::schema::is_read_only;
+use crate::schema::{is_read_only, Schema};
 use crate::wire::Value;
 use serde_json::json;
 
@@ -55,6 +55,18 @@ pub fn parse_field(spec: &str) -> Result<(u32, Value), String> {
         other => return Err(format!("不支持的类型：{other}（可用 string/int/bool）")),
     };
     Ok((no, v))
+}
+
+/// 查方法的 operation，**未知方法一律按 `write` 处理**。
+///
+/// `call` 的兜底场景正是「固件升级出现了新方法」——此时读写属性不可知。
+/// fail-open 会绕过 `--yes` 闸门，因此这里选择 fail-closed：宁可多确认一次，
+/// 也不能把未知的写操作当只读放行。
+pub fn operation_of<'a>(schema: &'a Schema, method: &str) -> &'a str {
+    schema
+        .method(method)
+        .map(|i| i.operation.as_str())
+        .unwrap_or("write")
 }
 
 /// 写类操作的确认闸门：`read` 直接放行，其余必须显式 `--yes`。
