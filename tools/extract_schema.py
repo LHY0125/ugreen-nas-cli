@@ -52,6 +52,24 @@ FDP_FIELD_WIRES: dict[int, int] = {
 # 只有 name 的字节串不构成描述符，不能仅凭 name 匹配就接受。
 DESCRIPTOR_MARKER_FIELDS = frozenset({2, 4, 5, 6, 12})
 
+# descriptor.proto 的字段声明顺序。protoc 按声明顺序序列化，public/weak_dependency
+# (10/11) 会排在 message_type(4) 之前，所以判断「回退」要用声明顺序而不是字段号。
+FDP_DECL_ORDER: dict[int, int] = {
+    1: 0,
+    2: 1,
+    3: 2,
+    10: 3,
+    11: 4,
+    4: 5,
+    5: 6,
+    6: 7,
+    7: 8,
+    8: 9,
+    9: 10,
+    12: 11,
+    14: 12,
+}
+
 # FieldDescriptorProto.type 的数字编码 → 字符串类型名。
 # schema.json 里必须是字符串：src/schema.rs 的 FieldDef.kind 是 String。
 PROTO_TYPE_NAMES: dict[int, str] = {
@@ -100,14 +118,20 @@ def read_varint(buf: bytes, i: int, end: int | None = None) -> tuple[int, int] |
 
 
 def _parse_message(
-    buf: bytes, i: int, end: int, wires: dict[int, int] | None = None
-) -> tuple[dict[int, list], int]:
+    buf: bytes,
+    i: int,
+    end: int,
+    wires: dict[int, int] | None = None,
+    strict_ordering: bool = False,
+) -> tuple[dict[int, list], int, bool]:
     """解析 protobuf 消息，同时返回消费到的下标。遇到非法字段号或越界即停止。
 
     `wires` 给定字段表时，还会在字段表外或 wire type 不符处停止——
     描述符在二进制里没有长度前缀，只能靠这一条判断真实边界。
     """
     out: dict[int, list] = {}
+    truncated = False
+    last_rank = -1
     end = min(end, len(buf))
     while i < end:
         got = read_varint(buf, i, end)
@@ -119,6 +143,14 @@ def _parse_message(
             break
         if wires is not None and wires.get(field) != wire:
             break
+        if strict_ordering:
+            # 第二段描述符必以 field 1 开头：name 重复或声明顺序回退即停止。
+            if field == 1 and 1 in out:
+                break
+            rank = FDP_DECL_ORDER[field]
+            if rank < last_rank:
+                break
+            last_rank = rank
         if wire == 0:
             got = read_varint(buf, i, end)
             if got is None:
@@ -130,23 +162,26 @@ def _parse_message(
                 break
             length, i = got
             if i + length > end:
+                truncated = True
                 break
             value = buf[i : i + length]
             i += length
         elif wire == 5:
             if i + 4 > end:
+                truncated = True
                 break
             value = buf[i : i + 4]
             i += 4
         elif wire == 1:
             if i + 8 > end:
+                truncated = True
                 break
             value = buf[i : i + 8]
             i += 8
         else:
             break
         out.setdefault(field, []).append(value)
-    return out, i
+    return out, i, truncated
 
 
 def parse_message(buf: bytes, i: int, end: int) -> dict[int, list]:
@@ -154,9 +189,9 @@ def parse_message(buf: bytes, i: int, end: int) -> dict[int, list]:
     return _parse_message(buf, i, end)[0]
 
 
-def _parse_descriptor(buf: bytes, i: int, end: int) -> tuple[dict[int, list], int]:
+def _parse_descriptor(buf: bytes, i: int, end: int) -> tuple[dict[int, list], int, bool]:
     """按 FileDescriptorProto 字段表解析，wire type 不符即停止。"""
-    return _parse_message(buf, i, end, FDP_FIELD_WIRES)
+    return _parse_message(buf, i, end, FDP_FIELD_WIRES, strict_ordering=True)
 
 
 def _is_bytes(value: Any) -> bool:
@@ -191,14 +226,14 @@ def find_descriptors(blob: bytes, names: list[str]) -> dict[str, dict[int, list]
             if at < 0:
                 break
             window_end = min(at + MAX_DESC_WINDOW, len(blob))
-            parsed, consumed = _parse_descriptor(blob, at, window_end)
+            parsed, consumed, truncated = _parse_descriptor(blob, at, window_end)
             got = parsed.get(1)
             # 仅凭 name 匹配是恒真断言（搜索模式本身就含 name），必须再确认
             # 真的解析出了描述符的其它字段，否则裸串会挡住后面真正的描述符。
             if got and got[0] == raw_name and set(parsed) & DESCRIPTOR_MARKER_FIELDS:
-                if consumed >= window_end and window_end < len(blob):
+                if truncated or (consumed >= window_end and window_end < len(blob)):
                     print(
-                        f"警告：{name} 的解析触及 {MAX_DESC_WINDOW} 字节窗口上限，结果可能被截断",
+                        f"警告：{name} 的解析被截断（窗口上限 {MAX_DESC_WINDOW} 字节），结果可能不完整",
                         file=sys.stderr,
                     )
                 found[name] = parsed
@@ -488,9 +523,12 @@ def _run_remote(target: str, script: str) -> str:
         raise SystemExit(f"远端扫描超时（>{SSH_TIMEOUT}s）")
     except OSError as exc:
         raise SystemExit(f"无法执行 ssh：{exc}")
+    stderr_text = proc.stderr.decode("utf-8", "replace")
     if proc.returncode != 0:
-        detail = proc.stderr.decode("utf-8", "replace").strip()
+        detail = stderr_text.strip()
         raise SystemExit(f"远端命令失败（exit {proc.returncode}）：{detail}")
+    if stderr_text:
+        sys.stderr.write(stderr_text)
     return proc.stdout.decode("utf-8", "replace")
 
 

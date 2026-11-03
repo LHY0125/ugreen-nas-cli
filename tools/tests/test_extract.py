@@ -120,6 +120,47 @@ def test_find_descriptors_accepts_syntax_only_descriptor():
     assert "demo/a.proto" in found
 
 
+def test_find_descriptors_stops_before_adjacent_descriptor():
+    # 两段描述符裸拼接：第二段的字段不能被吞进第一段，更不能把它的消息
+    # 归到第一段的 package 下
+    first = make_descriptor("demo/a.proto", "demo.first")
+    second = make_descriptor("demo/b.proto", "demo.second")
+    second += field_bytes(4, make_message("Other", make_field_descriptor("id", 1, 5)))
+    found = find_descriptors(first + second, ["demo/a.proto"])
+    parsed = found["demo/a.proto"]
+    assert parsed[2][0] == b"demo.first"
+    assert 4 not in parsed
+    assert extract_messages(found) == {}
+
+
+def test_find_descriptors_stops_at_field_number_regression():
+    descriptor = field_bytes(1, b"demo/a.proto")
+    descriptor += field_bytes(4, make_message("Volume", make_field_descriptor("id", 1, 5)))
+    descriptor += field_bytes(2, b"late")
+    parsed = find_descriptors(descriptor, ["demo/a.proto"])["demo/a.proto"]
+    assert 4 in parsed
+    assert 2 not in parsed
+
+
+def test_find_descriptors_accepts_declaration_order_dependencies():
+    # descriptor.proto 的声明顺序把 public/weak_dependency(10/11) 排在
+    # message_type(4) 之前，这属于合法序列，不能当成字段号回退
+    descriptor = field_bytes(1, b"demo/a.proto") + field_bytes(2, b"demo.v1")
+    descriptor += field_bytes(3, b"dep.proto")
+    descriptor += field_varint(10, 0) + field_varint(11, 0)
+    descriptor += field_bytes(4, make_message("Volume", make_field_descriptor("id", 1, 5)))
+    parsed = find_descriptors(descriptor, ["demo/a.proto"])["demo/a.proto"]
+    assert 4 in parsed
+
+
+def test_find_descriptors_warns_on_truncated_descriptor(monkeypatch, capsys):
+    monkeypatch.setattr("extract_schema.MAX_DESC_WINDOW", 32)
+    descriptor = make_descriptor("demo/demo.proto", "demo.v1") + field_bytes(4, b"x" * 64)
+    found = find_descriptors(descriptor, ["demo/demo.proto"])
+    assert "demo/demo.proto" in found
+    assert "截断" in capsys.readouterr().err
+
+
 def test_build_schema_shape():
     schema = build_schema(
         {},
