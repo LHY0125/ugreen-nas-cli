@@ -114,6 +114,16 @@ impl Schema {
             .map(|sig| sig.input.clone())
     }
 
+    /// 由 gRPC 方法路径（`/Service/Method`）查出响应消息全名。
+    pub fn response_type(&self, method_path: &str) -> Option<String> {
+        let rest = method_path.strip_prefix('/')?;
+        let (service, method) = rest.split_once('/')?;
+        self.services
+            .get(service)?
+            .get(method)
+            .map(|sig| sig.output.clone())
+    }
+
     /// 按字段名查字段号。命令表用名字而非数字，固件升级换号也不会错。
     pub fn field_no(&self, type_name: &str, field_name: &str) -> Option<u32> {
         self.messages

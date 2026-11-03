@@ -81,6 +81,17 @@ fn resolves_request_type_from_method() {
 }
 
 #[test]
+fn resolves_response_type_from_method() {
+    let s = Schema::from_json_str(SAMPLE).unwrap();
+    assert_eq!(
+        s.response_type("/storage.Storage/VolumeList").as_deref(),
+        Some("demo.Resp")
+    );
+    assert!(s.response_type("/nope.Nope/Nope").is_none());
+    assert!(s.response_type("malformed").is_none());
+}
+
+#[test]
 fn looks_up_field_number_by_name() {
     let s = Schema::from_json_str(SAMPLE).unwrap();
     assert_eq!(s.field_no("demo.Req", "path"), Some(3));
