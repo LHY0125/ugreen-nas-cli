@@ -1,5 +1,6 @@
 use crate::wire::{Message, Value};
-use serde::Deserialize;
+use serde::de::Error as DeError;
+use serde::{Deserialize, Deserializer};
 use serde_json::{json, Map, Value as J};
 use std::collections::BTreeMap;
 
@@ -39,12 +40,35 @@ pub struct MethodSig {
 struct Raw {
     #[serde(default)]
     messages: BTreeMap<String, Vec<FieldDef>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "de_enum_map")]
     enums: BTreeMap<String, BTreeMap<String, i64>>,
     #[serde(default)]
     services: BTreeMap<String, BTreeMap<String, MethodSig>>,
     #[serde(default)]
     methods: BTreeMap<String, MethodInfo>,
+}
+
+/// 枚举值在描述符里是 `int32`：负数被提取成了 u64 补码
+/// （`-1` → `18446744073709551615`）。这里统一回绕成 `i64`，
+/// 与 `Value::Varint(..) as i64` 的匹配方式保持一致。
+fn de_enum_map<'de, D>(d: D) -> Result<BTreeMap<String, BTreeMap<String, i64>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw: BTreeMap<String, BTreeMap<String, J>> = BTreeMap::deserialize(d)?;
+    let mut out = BTreeMap::new();
+    for (enum_name, variants) in raw {
+        let mut converted = BTreeMap::new();
+        for (symbol, value) in variants {
+            let no = value
+                .as_i64()
+                .or_else(|| value.as_u64().map(|v| v as i64))
+                .ok_or_else(|| D::Error::custom(format!("枚举值不是整数：{enum_name}.{symbol}")))?;
+            converted.insert(symbol, no);
+        }
+        out.insert(enum_name, converted);
+    }
+    Ok(out)
 }
 
 /// 从固件提取出的 protobuf schema。

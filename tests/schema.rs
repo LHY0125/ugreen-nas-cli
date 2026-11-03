@@ -131,3 +131,19 @@ fn varint_double_declaration_does_not_reinterpret_bits() {
     m.insert(2, Value::Varint(42));
     assert_eq!(s.message_to_json("demo.D", &m)["value"], 42);
 }
+
+#[test]
+fn negative_enum_values_from_descriptor_are_wrapped() {
+    // 描述符里 int32 的负数被提取器写成了 u64 补码（-1 → 18446744073709551615），
+    // 解析时必须回绕成 i64，否则整份 schema 会因超范围而解析失败。
+    let s = Schema::from_json_str(
+        r#"{
+      "messages": { "demo.E": [ {"no": 1, "name": "code", "type": "enum", "type_name": "demo.C"} ] },
+      "enums": { "demo.C": { "ERR_IO": 18446744073709551615 } }
+    }"#,
+    )
+    .unwrap();
+    let mut m = Message::new();
+    m.insert(1, Value::Varint(u64::MAX));
+    assert_eq!(s.message_to_json("demo.E", &m)["code"], "ERR_IO");
+}
