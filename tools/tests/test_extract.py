@@ -98,10 +98,26 @@ def test_parse_message_stops_at_invalid_field_number():
 
 
 def test_find_descriptors_skips_false_positives():
+    # 先放一个只有 name 字段的假描述符，真描述符在后——必须命中后者
+    decoy = field_bytes(1, b"demo/demo.proto")
     good = make_descriptor("demo/demo.proto", "demo.v1")
-    blob = b"\x00" * 8 + good + b"\x00" * 8
+    blob = b"\x00" * 8 + decoy + b"\x00" * 8 + good + b"\x00" * 8
     found = find_descriptors(blob, ["demo/demo.proto"])
     assert "demo/demo.proto" in found
+    assert found["demo/demo.proto"][2][0] == b"demo.v1"
+
+
+def test_find_descriptors_rejects_name_only_fragment():
+    # 只有 name 字段的裸串不构成有效描述符，不能因为「自证」就接受
+    decoy = field_bytes(1, b"demo/demo.proto")
+    assert find_descriptors(decoy, ["demo/demo.proto"]) == {}
+
+
+def test_find_descriptors_accepts_syntax_only_descriptor():
+    # 只有 name + syntax 的极简描述符仍然有效，不能被收紧后的判据误伤
+    descriptor = field_bytes(1, b"demo/a.proto") + field_bytes(12, b"proto3")
+    found = find_descriptors(descriptor, ["demo/a.proto"])
+    assert "demo/a.proto" in found
 
 
 def test_build_schema_shape():

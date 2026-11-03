@@ -1,3 +1,4 @@
 /target
 /spec/schema.json
 /spec/openapi/
+__pycache__/

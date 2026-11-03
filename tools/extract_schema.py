@@ -21,7 +21,7 @@ from typing import Any, Iterable
 
 PROTO_RE = re.compile(rb"[a-zA-Z0-9_/.-]{3,80}\.proto")
 MAX_DESC_FIELD = 20  # FileDescriptorProto 最大字段号（edition=14），超过即视为越界
-MAX_DESC_WINDOW = 8192  # 单个描述符的解析窗口上限
+MAX_DESC_WINDOW = 1 << 20  # 描述符解析窗口上限（是上限而非预期长度，正常描述符远小于此）
 MIN_BINARY_SIZE = 200_000  # 小于此体积的文件不可能内嵌描述符
 SSH_TIMEOUT = 600  # 单次远端扫描的超时（秒）
 
@@ -47,6 +47,10 @@ FDP_FIELD_WIRES: dict[int, int] = {
     12: 2,  # syntax
     14: 0,  # edition
 }
+
+# 有效描述符至少应含有其中一个字段：package / message_type / enum_type / service / syntax。
+# 只有 name 的字节串不构成描述符，不能仅凭 name 匹配就接受。
+DESCRIPTOR_MARKER_FIELDS = frozenset({2, 4, 5, 6, 12})
 
 # FieldDescriptorProto.type 的数字编码 → 字符串类型名。
 # schema.json 里必须是字符串：src/schema.rs 的 FieldDef.kind 是 String。
@@ -150,9 +154,9 @@ def parse_message(buf: bytes, i: int, end: int) -> dict[int, list]:
     return _parse_message(buf, i, end)[0]
 
 
-def _parse_descriptor(buf: bytes, i: int, end: int) -> dict[int, list]:
+def _parse_descriptor(buf: bytes, i: int, end: int) -> tuple[dict[int, list], int]:
     """按 FileDescriptorProto 字段表解析，wire type 不符即停止。"""
-    return _parse_message(buf, i, end, FDP_FIELD_WIRES)[0]
+    return _parse_message(buf, i, end, FDP_FIELD_WIRES)
 
 
 def _is_bytes(value: Any) -> bool:
@@ -186,9 +190,17 @@ def find_descriptors(blob: bytes, names: list[str]) -> dict[str, dict[int, list]
             at = blob.find(pattern, start)
             if at < 0:
                 break
-            parsed = _parse_descriptor(blob, at, min(at + MAX_DESC_WINDOW, len(blob)))
+            window_end = min(at + MAX_DESC_WINDOW, len(blob))
+            parsed, consumed = _parse_descriptor(blob, at, window_end)
             got = parsed.get(1)
-            if got and got[0] == raw_name:
+            # 仅凭 name 匹配是恒真断言（搜索模式本身就含 name），必须再确认
+            # 真的解析出了描述符的其它字段，否则裸串会挡住后面真正的描述符。
+            if got and got[0] == raw_name and set(parsed) & DESCRIPTOR_MARKER_FIELDS:
+                if consumed >= window_end and window_end < len(blob):
+                    print(
+                        f"警告：{name} 的解析触及 {MAX_DESC_WINDOW} 字节窗口上限，结果可能被截断",
+                        file=sys.stderr,
+                    )
                 found[name] = parsed
                 break
             start = at + 1
