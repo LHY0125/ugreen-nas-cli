@@ -51,3 +51,24 @@ fn repeated_field_last_wins() {
     let raw = vec![0x08, 0x01, 0x08, 0x02];
     assert_eq!(decode(&raw).get(&1), Some(&Value::Varint(2)));
 }
+
+#[test]
+fn malformed_length_prefix_does_not_panic() {
+    // 长度前缀 = u64::MAX，远超剩余字节数
+    let raw = vec![
+        0x0a, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
+    ];
+    let _ = decode(&raw); // 不 panic 即通过
+}
+
+#[test]
+fn roundtrip_fixed32_field() {
+    let m = msg(&[(4, Value::Fixed32(0xdead_beef))]);
+    assert_eq!(decode(&encode(&m)), m);
+}
+
+#[test]
+fn roundtrip_fixed64_field() {
+    let m = msg(&[(9, Value::Fixed64(0x0123_4567_89ab_cdef))]);
+    assert_eq!(decode(&encode(&m)), m);
+}

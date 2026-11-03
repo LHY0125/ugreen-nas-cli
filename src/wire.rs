@@ -89,7 +89,10 @@ pub fn decode(raw: &[u8]) -> Message {
                     break;
                 };
                 let len = len as usize;
-                if i + len > raw.len() {
+                // 用减法而非 `i + len` 比较：`len` 可达 u64::MAX，相加会溢出
+                // （debug 报 overflow panic，release 回绕后切片越界 panic）。
+                // `i` 恒 <= raw.len()，故 raw.len() - i 不会下溢。
+                if len > raw.len() - i {
                     break;
                 }
                 let v = raw[i..i + len].to_vec();
