@@ -109,3 +109,10 @@ fn scrub_leaves_clean_messages_alone() {
     let e = ApiError::BadRequest("path is empty".into()).scrub("ugpoa_v1.abcdef.secretsecret");
     assert_eq!(e.message(), "path is empty");
 }
+
+#[test]
+fn scrub_is_noop_for_empty_token() {
+    // 空令牌时不得让 str::replace 在每个字符边界插入替换串、打碎文案。
+    let e = ApiError::BadRequest("path is empty".into()).scrub("");
+    assert_eq!(e.message(), "path is empty");
+}

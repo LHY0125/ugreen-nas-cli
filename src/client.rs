@@ -58,6 +58,11 @@ impl ApiError {
     /// 用于防御服务端把 `Authorization` 头原样回显进错误体的情况；
     /// `Unauthorized` 不带服务端原文，无需处理。
     pub fn scrub(self, token: &str) -> Self {
+        // 空令牌没有可泄漏内容；且 `str::replace("")` 会在每个字符边界插入替换串，
+        // 把整条文案打碎，故直接原样返回。
+        if token.is_empty() {
+            return self;
+        }
         let redacted = redact(token);
         let fix = |m: String| m.replace(token, &redacted);
         match self {
