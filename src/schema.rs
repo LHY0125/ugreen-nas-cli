@@ -124,9 +124,6 @@ impl Schema {
                             }
                         }
                     }
-                    if d.kind == "double" {
-                        return json!(f64::from_bits(*v));
-                    }
                     if d.kind == "bool" {
                         return json!(*v != 0);
                     }
@@ -140,7 +137,13 @@ impl Schema {
                     json!(v)
                 }
             }
-            Value::Fixed32(v) => json!(v),
+            Value::Fixed32(v) => {
+                if def.map(|d| d.kind == "float").unwrap_or(false) {
+                    json!(f32::from_bits(*v))
+                } else {
+                    json!(v)
+                }
+            }
             Value::Bytes(b) => {
                 if let Some(tn) = def.and_then(|d| d.type_name.clone()) {
                     if self.messages.contains_key(&tn) {
