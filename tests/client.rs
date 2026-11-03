@@ -1,5 +1,4 @@
-use nascli::client::{classify, ApiError, Client};
-use nascli::config::Config;
+use nascli::client::{classify, ApiError};
 
 #[test]
 fn unauthorized_maps_to_3() {
@@ -85,16 +84,28 @@ fn network_error_has_stable_exit_code_and_message() {
 }
 
 #[test]
-fn client_exposes_only_redacted_token() {
-    // 错误信息只能拿到脱敏后的令牌，完整明文不得出现在任何字符串里。
-    let client = Client::new(Config {
-        host: "nas.example.com".into(),
-        port: 9443,
-        token: "ugpoa_v1.abcdef.secretsecret".into(),
-        insecure: true,
-    })
-    .expect("构造客户端不应失败");
-    let shown = client.redacted_token();
-    assert_eq!(shown, "ugpoa_v1.****");
-    assert!(!shown.contains("secretsecret"), "完整令牌不得出现：{shown}");
+fn missing_grpc_code_on_200_gives_actionable_message() {
+    // 200 但缺 x-grpc-code：不能当作成功，也不该把 protobuf 乱码甩给用户。
+    let e = classify(200, None, "\u{0}\u{1}binary-garbage");
+    assert_eq!(e.exit_code(), 7);
+    assert_eq!(e.code(), "SERVER_ERROR");
+    assert!(e.message().contains("x-grpc-code"), "{}", e.message());
+}
+
+#[test]
+fn scrub_removes_token_from_error_message() {
+    let token = "ugpoa_v1.abcdef.secretsecret";
+    let e = ApiError::Server(format!("bad auth header: Bearer {token}")).scrub(token);
+    assert!(
+        !e.message().contains("secretsecret"),
+        "令牌不得泄露：{}",
+        e.message()
+    );
+    assert!(e.message().contains("ugpoa_v1.****"));
+}
+
+#[test]
+fn scrub_leaves_clean_messages_alone() {
+    let e = ApiError::BadRequest("path is empty".into()).scrub("ugpoa_v1.abcdef.secretsecret");
+    assert_eq!(e.message(), "path is empty");
 }

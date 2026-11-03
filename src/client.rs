@@ -52,6 +52,23 @@ impl ApiError {
             ApiError::Unauthorized => "令牌无效或已过期",
         }
     }
+
+    /// 输出侧兜底：若错误信息里出现令牌明文，替换成脱敏形式。
+    ///
+    /// 用于防御服务端把 `Authorization` 头原样回显进错误体的情况；
+    /// `Unauthorized` 不带服务端原文，无需处理。
+    pub fn scrub(self, token: &str) -> Self {
+        let redacted = redact(token);
+        let fix = |m: String| m.replace(token, &redacted);
+        match self {
+            ApiError::BadRequest(m) => ApiError::BadRequest(fix(m)),
+            ApiError::Forbidden(m) => ApiError::Forbidden(fix(m)),
+            ApiError::Unsupported(m) => ApiError::Unsupported(fix(m)),
+            ApiError::Network(m) => ApiError::Network(fix(m)),
+            ApiError::Server(m) => ApiError::Server(fix(m)),
+            ApiError::Unauthorized => ApiError::Unauthorized,
+        }
+    }
 }
 
 /// 从响应体里取 `message` 字段，其次取非空的 `msg`，都取不到就返回原文。
@@ -78,6 +95,7 @@ fn extract_message(body: &str) -> String {
 /// 纯函数，不发网络请求；判定优先级固定：
 /// 401 → Unauthorized；`cardinality violation` → Unsupported（流式方法不支持）；
 /// `Access not allowed` → Forbidden；400 / gRPC 3 / gRPC 1005 → BadRequest；
+/// 200 但缺 `x-grpc-code` → Server（提示代理可能剥离了该头）；
 /// 其余（含 415、5xx、未知状态）→ Server。
 pub fn classify(status: u16, grpc_code: Option<i64>, body: &str) -> ApiError {
     let msg = extract_message(body);
@@ -97,6 +115,13 @@ pub fn classify(status: u16, grpc_code: Option<i64>, body: &str) -> ApiError {
     }
     if status == 415 {
         return ApiError::Server(msg);
+    }
+    // 200 却没有 x-grpc-code：无法判断成功与否，且 body 是 protobuf 二进制，
+    // 直接展示会是乱码，故给出明确文案（常见于反向代理剥离响应头）。
+    if status == 200 && grpc_code.is_none() {
+        return ApiError::Server(
+            "响应缺少 x-grpc-code 头，可能被代理剥离；请确认直连 NAS 或代理透传该头".to_string(),
+        );
     }
     if status >= 500 {
         return ApiError::Server(msg);
@@ -152,11 +177,7 @@ impl Client {
             return Ok(decode(&bytes));
         }
         let body = String::from_utf8_lossy(&bytes).to_string();
-        Err(classify(status, grpc_code, &body))
-    }
-
-    /// 供错误信息使用，避免把令牌写进日志。
-    pub fn redacted_token(&self) -> String {
-        redact(&self.token)
+        // 输出侧兜底脱敏：服务端若回显 Authorization 头，明文令牌不得进入错误信息。
+        Err(classify(status, grpc_code, &body).scrub(&self.token))
     }
 }
