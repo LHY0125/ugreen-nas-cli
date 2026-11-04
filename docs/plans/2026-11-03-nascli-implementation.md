@@ -2805,13 +2805,13 @@ MIT
 不得提交任何含真实主机名、IP、序列号、用户名、邮箱或真实路径的样本。
 
 脱敏方法：保留结构，把字符串字段替换为等长的占位内容
-（例如 `/volume1/@home/<user>` → `/volume1/demo`）。
+（例如用户家目录路径 → `/volume1/demo`）。
 ```
 
 - [ ] **Step 3: 扫描仓库确认无真实环境信息**
 
 ```bash
-grep -rniE "192\.168\.|WWD[0-9A-Z]{5}|@qq\.com|/volume1/@home/" \
+grep -rniE "192[.]168[.]|WWD[0-9A-Z]{5}|@qq[.]com|/volume1/@hom[e]/" \
   --include="*.rs" --include="*.py" --include="*.md" --include="*.toml" .
 ```
 Expected: 无输出
