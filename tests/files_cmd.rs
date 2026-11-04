@@ -1,4 +1,6 @@
-use nascli::commands::files::{build_message, require_target, resolve};
+use nascli::commands::files::{
+    build_message, is_streaming_unsupported, require_target, resolve, resolve_error_exit_code,
+};
 use nascli::schema::Schema;
 use nascli::wire::Value;
 
@@ -88,6 +90,45 @@ fn delete_requires_yes_operation() {
 #[test]
 fn rejects_unknown_action() {
     assert!(resolve("nope").is_err());
+}
+
+/// 流式方法与未知子命令必须映射到不同退出码：
+/// 5 表示「方法不支持」，2 表示「参数错误」。混用会让智能体错误归因。
+#[test]
+fn streaming_actions_map_to_exit_code_5() {
+    for action in ["du", "find"] {
+        assert!(is_streaming_unsupported(action), "action={action}");
+        assert_eq!(resolve_error_exit_code(action), 5, "action={action}");
+    }
+}
+
+#[test]
+fn unknown_action_maps_to_exit_code_2() {
+    assert!(!is_streaming_unsupported("nope"));
+    assert_eq!(resolve_error_exit_code("nope"), 2);
+}
+
+/// 写类动作必须落在非 read 的 operation 上，否则 `--yes` 闸门会被绕过。
+#[test]
+fn every_write_action_is_not_read() {
+    for action in [
+        "mkdir",
+        "touch",
+        "echo",
+        "rename",
+        "cpmv",
+        "del",
+        "restore",
+        "chtimes",
+        "modify-acl",
+        "share-mkdir",
+    ] {
+        let (_, _, op) = resolve(action).unwrap();
+        assert!(
+            matches!(op, "write" | "delete"),
+            "{action} 被标记为 {op}，写操作必须不是 read"
+        );
+    }
 }
 
 /// 单参数动作缺少 `--path` 时必须 fail-closed，不能把空路径发给服务端。

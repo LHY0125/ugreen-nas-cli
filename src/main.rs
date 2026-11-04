@@ -79,8 +79,8 @@ enum Command {
     /// 文件操作：浏览 / 属性 / 创建 / 删除 / 回收站
     Fs {
         /// 动作：stat | ls | cat | getfattr | recycle-status | path-perm | md5sum |
-        /// sha256sum | mkdir | touch | echo | rename | cpmv | del | restore | chtimes |
-        /// modify-acl | share-mkdir（du / find 为流式，不支持）
+        /// sha256sum | mkdir | touch | echo | rename | cpmv | del（默认移入回收站） |
+        /// restore | chtimes | modify-acl | share-mkdir（du / find 为流式，不支持）
         #[arg(value_name = "ACTION")]
         action: String,
         /// 目标路径（单参数动作用）
@@ -326,24 +326,19 @@ fn main() -> ExitCode {
             limit,
             yes,
         } => {
-            // 先解析动作再判闸门：写类动作必须在建立连接前就被拒绝。
-            // du / find 是流式方法，解析阶段即失败，按「方法不支持」退出（5）。
+            // 先解析动作：du / find 是流式方法，按「方法不支持」退出（5）；
+            // 拼错的子命令是参数错误（2），不能混为一谈。
             let (socket, method, op) = match nascli::commands::files::resolve(&action) {
                 Ok(v) => v,
                 Err(e) => {
                     eprintln!("{e}");
-                    return ExitCode::from(5);
+                    return ExitCode::from(nascli::commands::files::resolve_error_exit_code(
+                        &action,
+                    ));
                 }
             };
-            if let Err(e) = require_yes(op, method, &path, yes) {
-                eprintln!("{e}");
-                return ExitCode::from(2);
-            }
-            // 目标参数闸门：单参数动作缺 --path 时不能发空请求。
-            if let Err(e) = nascli::commands::files::require_target(&action, &path) {
-                eprintln!("{e}");
-                return ExitCode::from(2);
-            }
+            // 先判断动作能否用 --path 参数化：多参数动作直接引导 nascli call。
+            // 若放在 require_yes 之后，用户会先被要求 --yes、加上后又被拒绝，形成死胡同。
             let msg = match nascli::commands::files::build_message(
                 &schema, method, &action, &path, page, limit,
             ) {
@@ -353,6 +348,21 @@ fn main() -> ExitCode {
                     return ExitCode::from(2);
                 }
             };
+            // del 只发 path，forever 默认为 false——默认移入回收站，不是永久删除。
+            let detail = if action == "del" && !path.is_empty() {
+                format!("{path}（默认移入回收站，不永久删除）")
+            } else {
+                path.clone()
+            };
+            if let Err(e) = require_yes(op, method, &detail, yes) {
+                eprintln!("{e}");
+                return ExitCode::from(2);
+            }
+            // 目标参数闸门：单参数动作缺 --path 时不能发空请求。
+            if let Err(e) = nascli::commands::files::require_target(&action, &path) {
+                eprintln!("{e}");
+                return ExitCode::from(2);
+            }
             let ctx = match build_ctx() {
                 Ok(c) => c,
                 Err(code) => return code,

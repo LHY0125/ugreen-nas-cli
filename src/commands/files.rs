@@ -48,6 +48,23 @@ pub const NEEDS_CALL: &[&str] = &[
     "share-mkdir",
 ];
 
+/// 该方法是否因服务端流式而不可用（`resolve` 失败时应映射为退出码 5）。
+///
+/// 与「未知子命令」必须区分：后者是参数错误（2）。若统一返回 5，智能体会
+/// 把拼错的子命令当成流式限制，转而去 `nascli call` 调一个错误的方法。
+pub fn is_streaming_unsupported(action: &str) -> bool {
+    matches!(action, "du" | "find")
+}
+
+/// `resolve` 失败时的退出码：流式方法不支持（5）与未知子命令（2）分开。
+pub fn resolve_error_exit_code(action: &str) -> u8 {
+    if is_streaming_unsupported(action) {
+        5
+    } else {
+        2
+    }
+}
+
 /// 把子命令映射为 `(套接字, gRPC 方法, operation)`。
 ///
 /// operation 必须与 schema 中的标注一致：写类动作标成 `read` 会绕过
