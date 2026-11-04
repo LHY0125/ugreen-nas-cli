@@ -133,6 +133,19 @@ fn run_read(
     }
 }
 
+/// 只读域的三元组 resolve 结果 → 二元组，并断言 operation 确实是 `read`。
+///
+/// `run_read` 不带 `--yes` 闸门；若某动作被误标为非 read，这里在调试构建下立即暴露，
+/// 而不是把「只读」停留在注释里。
+fn expect_read(
+    r: Result<(&'static str, &'static str, &'static str), String>,
+) -> Result<(&'static str, &'static str), String> {
+    r.map(|(socket, method, op)| {
+        debug_assert_eq!(op, "read", "只读域的动作被标记为非 read：{method}");
+        (socket, method)
+    })
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let schema = match Schema::from_json_str(SCHEMA_JSON) {
@@ -213,16 +226,22 @@ fn main() -> ExitCode {
             )
         }
         Command::Apps { action } => {
+            // 目标参数闸门必须在建连之前：detail/status 的空请求必然失败，
+            // 且服务端错误（not found app / Parameter error!）会误导归因。
+            if let Err(e) =
+                nascli::commands::apps::require_target(&action, &nascli::commands::apps::empty())
+            {
+                eprintln!("{e}");
+                return ExitCode::from(2);
+            }
             let ctx = match build_ctx() {
                 Ok(c) => c,
                 Err(code) => return code,
             };
-            // 三个域全部只读，三元组里的 operation 恒为 read，交给 run_read 时丢弃。
             run_read(
                 &ctx,
                 &schema,
-                nascli::commands::apps::resolve(&action)
-                    .map(|(socket, method, _)| (socket, method)),
+                expect_read(nascli::commands::apps::resolve(&action)),
             )
         }
         Command::Users { action } => {
@@ -240,8 +259,7 @@ fn main() -> ExitCode {
             run_read(
                 &ctx,
                 &schema,
-                nascli::commands::download::resolve(&action)
-                    .map(|(socket, method, _)| (socket, method)),
+                expect_read(nascli::commands::download::resolve(&action)),
             )
         }
         Command::Docker { action, yes } => {
