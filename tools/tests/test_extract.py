@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from extract_schema import (  # noqa: E402
     PROTO_TYPE_NAMES,
+    _proto_names_in,
     build_schema,
     collect_methods_local,
     extract_enums,
@@ -116,6 +117,16 @@ def test_find_descriptors_rejects_name_only_fragment():
     # 只有 name 字段的裸串不构成有效描述符，不能因为「自证」就接受
     decoy = field_bytes(1, b"demo/demo.proto")
     assert find_descriptors(decoy, ["demo/demo.proto"]) == {}
+
+
+def test_proto_names_in_strips_swallowed_length_prefix():
+    # 文件名长度 46 的前缀字节是 0x2E（'.'），会被正则吞进匹配得到
+    # `.filesystem/...`；剥掉首字节后必须仍能定位到真正的描述符。
+    name = "filesystem/cli/ug_get_recycle_status_cli.proto"
+    assert len(name) == 0x2E
+    blob = make_descriptor(name, "demo.v1")
+    found = find_descriptors(blob, _proto_names_in(blob))
+    assert name in found
 
 
 def test_find_descriptors_accepts_syntax_only_descriptor():

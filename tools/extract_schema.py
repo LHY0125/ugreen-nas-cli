@@ -415,10 +415,20 @@ def _read_binary(path: str) -> bytes | None:
 
 
 def _proto_names_in(blob: bytes) -> list[str]:
-    """从单个二进制里正则捞出候选 .proto 名（跳过 google/ 自带描述符）。"""
+    """从单个二进制里正则捞出候选 .proto 名（跳过 google/ 自带描述符）。
+
+    描述符里的文件名前面紧挨着它的长度前缀字节。该字节若恰好落在正则的
+    字符集里（例如长度 46 的 `0x2E` 就是 `.`），会被一并吞进匹配，得到
+    `.filesystem/...` 这种不存在的名字，对应描述符就永远找不到。
+    因此每个匹配都额外剥掉首字节作为候选；`find_descriptors` 会用描述符
+    自带的 name 字段自证，错误候选不会命中，只会多一次无果的搜索。
+    """
     names: set[str] = set()
     for raw in PROTO_RE.findall(blob):
-        names.add(raw.decode("utf-8", "replace"))
+        name = raw.decode("utf-8", "replace")
+        names.add(name)
+        if len(name) > 1:
+            names.add(name[1:])
     return sorted(
         name
         for name in names
