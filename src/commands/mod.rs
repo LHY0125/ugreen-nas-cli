@@ -1,10 +1,10 @@
 // 各命令模块由后续任务逐个加入，未加入的模块不能提前声明，否则无法编译：
-//   已加入: pub mod storage;（Task 8）
-//   待加入: Task 9: pub mod system;
-//   Task 10: pub mod docker;   Task 11: pub mod apps; pub mod users; pub mod download;
+//   已加入: pub mod storage;（Task 8）、pub mod system;（Task 9）
+//   待加入: Task 10: pub mod docker;   Task 11: pub mod apps; pub mod users; pub mod download;
 //   Task 12: pub mod files;
 
 pub mod storage;
+pub mod system;
 
 use crate::client::{ApiError, Client};
 use crate::schema::{is_read_only, Schema};

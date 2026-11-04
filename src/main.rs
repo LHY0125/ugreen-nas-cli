@@ -34,6 +34,19 @@ enum Command {
         #[arg(value_name = "ACTION")]
         action: String,
     },
+    /// 系统信息与指标
+    System {
+        /// 动作：identity | update-status | cpu | mem | net | disk | volume | overview |
+        /// services | processes | ups | power | fan | led | beep | cpu-config | zram
+        #[arg(value_name = "ACTION")]
+        action: String,
+    },
+    /// 网络配置
+    Network {
+        /// 动作：general | ifaces
+        #[arg(value_name = "ACTION")]
+        action: String,
+    },
     /// 通用调用（兜底）
     Call {
         /// 套接字 ID，例如 storage
@@ -60,6 +73,35 @@ fn build_ctx() -> Result<Ctx, ExitCode> {
         ExitCode::from(6)
     })?;
     Ok(Ctx { client })
+}
+
+/// 执行只读命令：解析动作 → 调用 → 按响应类型翻译 → 输出 JSON。
+///
+/// system 与 network 两个域共用；解析失败按参数错误（2）退出。
+fn run_read(
+    ctx: &Ctx,
+    schema: &Schema,
+    resolved: Result<(&'static str, &'static str), String>,
+) -> ExitCode {
+    let (socket, method) = match resolved {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(2);
+        }
+    };
+    match nascli::commands::system::run(&ctx.client, socket, method) {
+        Ok(resp) => {
+            let data = match schema.response_type(method) {
+                Some(t) => schema.message_to_json(&t, &resp),
+                // schema 缺该方法签名时退回按字段号裸转，至少不丢数据。
+                None => nascli::schema::to_json(&resp, schema),
+            };
+            emit_ok(method, data);
+            ExitCode::SUCCESS
+        }
+        Err(e) => ExitCode::from(emit_err(&e) as u8),
+    }
 }
 
 fn main() -> ExitCode {
@@ -118,6 +160,28 @@ fn main() -> ExitCode {
                 }
                 Err(e) => ExitCode::from(emit_err(&e) as u8),
             }
+        }
+        Command::System { action } => {
+            let ctx = match build_ctx() {
+                Ok(c) => c,
+                Err(code) => return code,
+            };
+            run_read(
+                &ctx,
+                &schema,
+                nascli::commands::system::resolve_system(&action),
+            )
+        }
+        Command::Network { action } => {
+            let ctx = match build_ctx() {
+                Ok(c) => c,
+                Err(code) => return code,
+            };
+            run_read(
+                &ctx,
+                &schema,
+                nascli::commands::system::resolve_network(&action),
+            )
         }
         Command::Call {
             socket,
