@@ -13,6 +13,9 @@ pub struct FieldDef {
     pub kind: String,
     #[serde(default)]
     pub type_name: Option<String>,
+    /// 是否 repeated。旧版 schema 没有该键，缺省为 false。
+    #[serde(default)]
+    pub repeated: bool,
 }
 
 /// 方法元信息：套接字、操作类型与所需角色。
@@ -154,7 +157,32 @@ impl Schema {
     }
 
     /// 把同号字段的全部值转成 JSON：单值出标量，多值出数组。
+    ///
+    /// repeated 标量在 proto3 里默认 packed 编码——所有元素打包进**一个**
+    /// Bytes 字段。这类字段必须先按类型解包，否则会被当成字符串/十六进制输出。
     fn values_to_json(&self, def: Option<&FieldDef>, values: &[Value]) -> J {
+        if let Some(d) = def {
+            if d.repeated && is_packed_scalar(&d.kind) {
+                let mut out = Vec::new();
+                let mut saw_packed = false;
+                for value in values {
+                    match value {
+                        Value::Bytes(b) => {
+                            saw_packed = true;
+                            for unpacked in unpack_packed(b, &d.kind) {
+                                out.push(self.value_to_json(def, &unpacked));
+                            }
+                        }
+                        other => out.push(self.value_to_json(def, other)),
+                    }
+                }
+                // 只有真的遇到 packed 负载才改写成数组；非 packed 的单元素
+                // repeated 字段仍按标量输出，保持既有契约。
+                if saw_packed {
+                    return J::Array(out);
+                }
+            }
+        }
         match values {
             [] => J::Null,
             [single] => self.value_to_json(def, single),
@@ -211,6 +239,61 @@ impl Schema {
     fn enum_symbol(&self, type_name: &str, value: i64) -> Option<String> {
         let m = self.enums.get(type_name)?;
         m.iter().find(|(_, &v)| v == value).map(|(k, _)| k.clone())
+    }
+}
+
+/// proto3 中可能以 packed 形式编码的标量类型。
+///
+/// `string` / `bytes` / `message` 永远不会 packed：它们的每个元素本身就是
+/// 独立的 length-delimited 字段，已经在 `Message` 的 `Vec<Value>` 里各占一项。
+fn is_packed_scalar(kind: &str) -> bool {
+    matches!(
+        kind,
+        "int32"
+            | "int64"
+            | "uint32"
+            | "uint64"
+            | "sint32"
+            | "sint64"
+            | "bool"
+            | "enum"
+            | "fixed32"
+            | "fixed64"
+            | "sfixed32"
+            | "sfixed64"
+            | "float"
+            | "double"
+    )
+}
+
+/// 解包 packed 标量负载：连续的同类型值，没有 tag、也没有逐元素长度前缀。
+///
+/// 定长类型按 4/8 字节切分，其余（varint 系列）按裸 varint 逐个读。
+/// 尾部残缺字节会被丢弃，不 panic。
+fn unpack_packed(bytes: &[u8], kind: &str) -> Vec<Value> {
+    match kind {
+        "fixed32" | "sfixed32" | "float" => bytes
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| Value::Fixed32(u32::from_le_bytes(*c)))
+            .collect(),
+        "fixed64" | "sfixed64" | "double" => bytes
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|c| Value::Fixed64(u64::from_le_bytes(*c)))
+            .collect(),
+        // varint 系列：int32/int64/uint32/uint64/sint32/sint64/bool/enum
+        _ => {
+            let mut out = Vec::new();
+            let mut i = 0;
+            while let Some((v, next)) = crate::wire::read_varint_at(bytes, i) {
+                out.push(Value::Varint(v));
+                i = next;
+            }
+            out
+        }
     }
 }
 

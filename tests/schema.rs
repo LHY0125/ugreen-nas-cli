@@ -238,3 +238,138 @@ fn empty_value_vector_is_skipped() {
     assert!(s.message_to_json("demo.R", &m).get("ids").is_none());
     assert!(to_json(&m, &s).get("field_1").is_none());
 }
+
+#[test]
+fn packed_repeated_varint_renders_as_array() {
+    // packed int32：一个 Bytes 内含 3 个裸 varint。
+    let s = Schema::from_json_str(
+        r#"{
+      "messages": { "demo.P": [ {"no": 1, "name": "ids", "type": "int32", "repeated": true} ] }
+    }"#,
+    )
+    .unwrap();
+    let mut m = Message::new();
+    m.insert(1, vec![Value::Bytes(vec![1, 2, 3])]);
+    assert_eq!(
+        s.message_to_json("demo.P", &m)["ids"],
+        serde_json::json!([1, 2, 3])
+    );
+}
+
+#[test]
+fn packed_repeated_enum_renders_symbols() {
+    // packed enum 解包后仍走 value_to_json，枚举值应翻成符号。
+    let s = Schema::from_json_str(
+        r#"{
+      "messages": { "demo.P": [ {"no": 1, "name": "flags", "type": "enum", "type_name": "demo.F", "repeated": true} ] },
+      "enums": { "demo.F": { "OK": 0, "WARN": 1, "BAD": 2 } }
+    }"#,
+    )
+    .unwrap();
+    let mut m = Message::new();
+    m.insert(1, vec![Value::Bytes(vec![0, 1, 2])]);
+    assert_eq!(
+        s.message_to_json("demo.P", &m)["flags"],
+        serde_json::json!(["OK", "WARN", "BAD"])
+    );
+}
+
+#[test]
+fn packed_repeated_bool_renders_booleans() {
+    let s = Schema::from_json_str(
+        r#"{
+      "messages": { "demo.P": [ {"no": 1, "name": "bits", "type": "bool", "repeated": true} ] }
+    }"#,
+    )
+    .unwrap();
+    let mut m = Message::new();
+    m.insert(1, vec![Value::Bytes(vec![1, 0, 1])]);
+    assert_eq!(
+        s.message_to_json("demo.P", &m)["bits"],
+        serde_json::json!([true, false, true])
+    );
+}
+
+#[test]
+fn packed_repeated_fixed32_and_double_render_as_numbers() {
+    let s = Schema::from_json_str(
+        r#"{
+      "messages": {
+        "demo.P": [
+          {"no": 1, "name": "ratio", "type": "float", "repeated": true},
+          {"no": 2, "name": "weight", "type": "double", "repeated": true}
+        ]
+      }
+    }"#,
+    )
+    .unwrap();
+    let mut f32_payload = Vec::new();
+    f32_payload.extend_from_slice(&1.5f32.to_le_bytes());
+    f32_payload.extend_from_slice(&2.5f32.to_le_bytes());
+    let mut f64_payload = Vec::new();
+    f64_payload.extend_from_slice(&3.5f64.to_le_bytes());
+    let mut m = Message::new();
+    m.insert(1, vec![Value::Bytes(f32_payload)]);
+    m.insert(2, vec![Value::Bytes(f64_payload)]);
+    let j = s.message_to_json("demo.P", &m);
+    assert_eq!(j["ratio"], serde_json::json!([1.5, 2.5]));
+    assert_eq!(j["weight"], serde_json::json!([3.5]));
+}
+
+#[test]
+fn repeated_string_is_not_unpacked() {
+    // repeated string 永远不是 packed：每个元素是独立的 length-delimited 字段，
+    // 单元素时仍输出字符串标量。
+    let s = Schema::from_json_str(
+        r#"{
+      "messages": { "demo.P": [ {"no": 1, "name": "tags", "type": "string", "repeated": true} ] }
+    }"#,
+    )
+    .unwrap();
+    let mut m = Message::new();
+    m.insert(1, vec![Value::Bytes(b"alpha".to_vec())]);
+    assert_eq!(s.message_to_json("demo.P", &m)["tags"], "alpha");
+
+    let mut two = Message::new();
+    two.insert(
+        1,
+        vec![
+            Value::Bytes(b"alpha".to_vec()),
+            Value::Bytes(b"beta".to_vec()),
+        ],
+    );
+    assert_eq!(
+        s.message_to_json("demo.P", &two)["tags"],
+        serde_json::json!(["alpha", "beta"])
+    );
+}
+
+#[test]
+fn non_repeated_bytes_are_not_unpacked() {
+    // 非 repeated 的 bytes 字段即便内容是合法 varint 序列，也不能被解包。
+    let s = Schema::from_json_str(
+        r#"{
+      "messages": { "demo.P": [ {"no": 1, "name": "blob", "type": "bytes"} ] }
+    }"#,
+    )
+    .unwrap();
+    let mut m = Message::new();
+    m.insert(1, vec![Value::Bytes(vec![0xff, 0xfe, 0xfd])]);
+    // 非 UTF-8 字节按十六进制输出，而不是数组。
+    assert_eq!(s.message_to_json("demo.P", &m)["blob"], "fffefd");
+}
+
+#[test]
+fn schema_without_repeated_key_still_loads() {
+    // 旧 schema（提取器尚未写入 repeated）必须仍能反序列化，缺省为 false。
+    let s = Schema::from_json_str(
+        r#"{
+      "messages": { "demo.P": [ {"no": 1, "name": "ids", "type": "int32"} ] }
+    }"#,
+    )
+    .unwrap();
+    let mut m = Message::new();
+    m.insert(1, vec![Value::Bytes(vec![0xff, 0xfe, 0xfd])]);
+    // 没有 repeated 标记 → 不做 packed 解包，按十六进制兜底。
+    assert_eq!(s.message_to_json("demo.P", &m)["ids"], "fffefd");
+}

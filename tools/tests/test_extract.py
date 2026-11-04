@@ -49,9 +49,14 @@ def make_descriptor(name: str, package: str) -> bytes:
 
 
 def make_field_descriptor(
-    name: str, number: int, type_code: int, type_name: str | None = None
+    name: str,
+    number: int,
+    type_code: int,
+    type_name: str | None = None,
+    label: int = 1,
 ) -> bytes:
     raw = field_bytes(1, name.encode()) + field_varint(3, number) + field_varint(5, type_code)
+    raw += field_varint(4, label)
     if type_name is not None:
         raw += field_bytes(6, type_name.encode())
     return raw
@@ -217,8 +222,31 @@ def test_extract_messages_emits_string_type_names():
     found = find_descriptors(descriptor, ["demo/demo.proto"])
     messages = extract_messages(found)
     assert messages["demo.v1.Volume"] == [
-        {"no": 1, "name": "path", "type": "string", "type_name": None}
+        {"no": 1, "name": "path", "type": "string", "type_name": None, "repeated": False}
     ]
+
+
+def test_extract_messages_marks_repeated_fields():
+    # label=3 是 repeated；proto3 普通字段是 label=1（optional）。
+    message = make_message(
+        "Volume",
+        make_field_descriptor("warn_flags", 1, 14, ".demo.v1.WarnFlag", label=3),
+        make_field_descriptor("path", 2, 9, label=1),
+    )
+    descriptor = make_descriptor("demo/demo.proto", "demo.v1") + field_bytes(4, message)
+    found = find_descriptors(descriptor, ["demo/demo.proto"])
+    fields = extract_messages(found)["demo.v1.Volume"]
+    assert fields[0]["repeated"] is True
+    assert fields[1]["repeated"] is False
+
+
+def test_extract_messages_defaults_repeated_false_without_label():
+    # 没有 label 字段（旧版/裁剪描述符）时按非 repeated 处理，不能崩。
+    raw = field_bytes(1, b"path") + field_varint(3, 1) + field_varint(5, 9)
+    message = field_bytes(1, b"Volume") + field_bytes(2, raw)
+    descriptor = make_descriptor("demo/demo.proto", "demo.v1") + field_bytes(4, message)
+    found = find_descriptors(descriptor, ["demo/demo.proto"])
+    assert extract_messages(found)["demo.v1.Volume"][0]["repeated"] is False
 
 
 def test_extract_messages_resolves_enum_and_message_type_names():

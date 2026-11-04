@@ -20,6 +20,9 @@ from pathlib import Path
 from typing import Any, Iterable
 
 PROTO_RE = re.compile(rb"[a-zA-Z0-9_/.-]{3,80}\.proto")
+# FieldDescriptorProto.label 的取值：1=optional、2=required、3=repeated。
+# proto3 里普通字段一律是 optional(1)，只有 repeated 才是 3。
+LABEL_REPEATED = 3
 MAX_DESC_FIELD = 20  # FileDescriptorProto 最大字段号（edition=14），超过即视为越界
 MAX_DESC_WINDOW = 1 << 20  # 描述符解析窗口上限（是上限而非预期长度，正常描述符远小于此）
 MIN_BINARY_SIZE = 200_000  # 小于此体积的文件不可能内嵌描述符
@@ -268,12 +271,15 @@ def _fields_of(md: dict[int, list]) -> list[dict]:
         if not name or not number:
             continue
         type_name = fd.get(6)
+        label = fd.get(4)
         fields.append(
             {
                 "no": number[0],
                 "name": _text(name[0]),
                 "type": type_name_of(fd),
                 "type_name": _text(type_name[0]).lstrip(".") if type_name else None,
+                # repeated 标量在 proto3 里默认 packed 编码，CLI 需要该标记才能解包
+                "repeated": bool(label) and label[0] == LABEL_REPEATED,
             }
         )
     return fields

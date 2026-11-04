@@ -1,4 +1,4 @@
-use nascli::wire::{decode, encode, Message, Value};
+use nascli::wire::{decode, encode, read_varint_at, Message, Value};
 use std::collections::BTreeMap;
 
 fn msg(pairs: &[(u32, Value)]) -> Message {
@@ -77,6 +77,29 @@ fn roundtrip_repeated_field() {
         vec![Value::Bytes(b"a".to_vec()), Value::Bytes(b"b".to_vec())],
     );
     assert_eq!(decode(&encode(&m)), m);
+}
+
+#[test]
+fn packed_scalar_stays_opaque_bytes_at_wire_layer() {
+    // packed repeated 标量在 wire 层就是一个 length-delimited 字段
+    // （field 1, len 3, 值 1/2/3）。解包需要字段类型信息，属于 schema 层职责。
+    let raw = vec![0x0a, 0x03, 0x01, 0x02, 0x03];
+    assert_eq!(
+        decode(&raw).get(&1),
+        Some(&vec![Value::Bytes(vec![1, 2, 3])])
+    );
+}
+
+#[test]
+fn read_varint_at_returns_value_and_next_offset() {
+    // 150 = 0x96 0x01；末尾的 0xff 是下一个 varint 的开头，不参与本次读取。
+    assert_eq!(read_varint_at(&[0x96, 0x01, 0xff], 0), Some((150, 2)));
+    // 从中间开始读
+    assert_eq!(read_varint_at(&[0x00, 0x96, 0x01], 1), Some((150, 3)));
+    // 数据不足（只有续位没有终止字节）
+    assert_eq!(read_varint_at(&[0x96], 0), None);
+    // 起点越界
+    assert_eq!(read_varint_at(&[0x96, 0x01], 2), None);
 }
 
 #[test]

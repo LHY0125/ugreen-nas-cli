@@ -57,6 +57,15 @@ pub fn encode(msg: &Message) -> Vec<u8> {
     out
 }
 
+/// 从 `raw` 的 `i` 位置读一个 varint，返回 `(值, 新位置)`；数据不足返回 `None`。
+///
+/// 供 schema 层解包 packed repeated 标量使用（packed 负载里是连续裸 varint）。
+pub fn read_varint_at(raw: &[u8], i: usize) -> Option<(u64, usize)> {
+    let mut idx = i;
+    let v = read_varint(raw, &mut idx)?;
+    Some((v, idx))
+}
+
 fn read_varint(raw: &[u8], i: &mut usize) -> Option<u64> {
     let mut r = 0u64;
     let mut shift = 0u32;
