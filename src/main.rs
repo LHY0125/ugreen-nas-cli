@@ -58,6 +58,24 @@ enum Command {
         #[arg(long)]
         yes: bool,
     },
+    /// 应用中心：已安装应用列表 / 详情 / 状态
+    Apps {
+        /// 动作：list | detail | status
+        #[arg(value_name = "ACTION")]
+        action: String,
+    },
+    /// 用户与用户组
+    Users {
+        /// 动作：list | groups
+        #[arg(value_name = "ACTION")]
+        action: String,
+    },
+    /// 下载中心
+    Download {
+        /// 动作：tasks
+        #[arg(value_name = "ACTION")]
+        action: String,
+    },
     /// 通用调用（兜底）
     Call {
         /// 套接字 ID，例如 storage
@@ -88,7 +106,7 @@ fn build_ctx() -> Result<Ctx, ExitCode> {
 
 /// 执行只读命令：解析动作 → 调用 → 按响应类型翻译 → 输出 JSON。
 ///
-/// system 与 network 两个域共用；解析失败按参数错误（2）退出。
+/// system / network / apps / users / download 五个只读域共用；解析失败按参数错误（2）退出。
 fn run_read(
     ctx: &Ctx,
     schema: &Schema,
@@ -192,6 +210,38 @@ fn main() -> ExitCode {
                 &ctx,
                 &schema,
                 nascli::commands::system::resolve_network(&action),
+            )
+        }
+        Command::Apps { action } => {
+            let ctx = match build_ctx() {
+                Ok(c) => c,
+                Err(code) => return code,
+            };
+            // 三个域全部只读，三元组里的 operation 恒为 read，交给 run_read 时丢弃。
+            run_read(
+                &ctx,
+                &schema,
+                nascli::commands::apps::resolve(&action)
+                    .map(|(socket, method, _)| (socket, method)),
+            )
+        }
+        Command::Users { action } => {
+            let ctx = match build_ctx() {
+                Ok(c) => c,
+                Err(code) => return code,
+            };
+            run_read(&ctx, &schema, nascli::commands::users::resolve(&action))
+        }
+        Command::Download { action } => {
+            let ctx = match build_ctx() {
+                Ok(c) => c,
+                Err(code) => return code,
+            };
+            run_read(
+                &ctx,
+                &schema,
+                nascli::commands::download::resolve(&action)
+                    .map(|(socket, method, _)| (socket, method)),
             )
         }
         Command::Docker { action, yes } => {
