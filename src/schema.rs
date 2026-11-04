@@ -134,17 +134,32 @@ impl Schema {
     }
 
     /// 按字段号把消息转成 JSON。未知字段号保留为 `field_<N>`。
+    ///
+    /// 同一字段号可能有多个值（repeated 字段）：多值输出 JSON 数组，
+    /// 单值输出标量——避免把所有单值字段都变成数组，破坏既有输出契约。
     pub fn message_to_json(&self, type_name: &str, msg: &Message) -> J {
         let defs = self.messages.get(type_name);
         let mut out = Map::new();
-        for (&no, value) in msg {
+        for (&no, values) in msg {
+            if values.is_empty() {
+                continue;
+            }
             let def = defs.and_then(|d| d.iter().find(|f| f.no == no));
             let key = def
                 .map(|d| d.name.clone())
                 .unwrap_or_else(|| format!("field_{no}"));
-            out.insert(key, self.value_to_json(def, value));
+            out.insert(key, self.values_to_json(def, values));
         }
         J::Object(out)
+    }
+
+    /// 把同号字段的全部值转成 JSON：单值出标量，多值出数组。
+    fn values_to_json(&self, def: Option<&FieldDef>, values: &[Value]) -> J {
+        match values {
+            [] => J::Null,
+            [single] => self.value_to_json(def, single),
+            many => J::Array(many.iter().map(|v| self.value_to_json(def, v)).collect()),
+        }
     }
 
     fn value_to_json(&self, def: Option<&FieldDef>, value: &Value) -> J {
@@ -202,10 +217,12 @@ impl Schema {
 /// 便捷入口：不指定消息类型时按字段号裸转，供 `call` 兜底命令使用。
 pub fn to_json(msg: &Message, schema: &Schema) -> J {
     let mut out = Map::new();
-    for (&no, value) in msg {
+    for (&no, values) in msg {
+        if values.is_empty() {
+            continue;
+        }
         let key = format!("field_{no}");
-        let v = schema.value_to_json(None, value);
-        out.insert(key, v);
+        out.insert(key, schema.values_to_json(None, values));
     }
     J::Object(out)
 }

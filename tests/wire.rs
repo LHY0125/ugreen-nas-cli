@@ -2,7 +2,11 @@ use nascli::wire::{decode, encode, Message, Value};
 use std::collections::BTreeMap;
 
 fn msg(pairs: &[(u32, Value)]) -> Message {
-    pairs.iter().cloned().collect::<BTreeMap<_, _>>()
+    pairs
+        .iter()
+        .cloned()
+        .map(|(no, v)| (no, vec![v]))
+        .collect::<BTreeMap<_, _>>()
 }
 
 #[test]
@@ -46,10 +50,33 @@ fn decodes_nested_bytes_as_opaque() {
 }
 
 #[test]
-fn repeated_field_last_wins() {
-    // 同一字段号出现两次时，BTreeMap 保留最后一个
+fn repeated_field_preserves_all_values() {
+    // 同号字段在 wire 上重复出现（repeated 字段），解码必须全部保留。
     let raw = vec![0x08, 0x01, 0x08, 0x02];
-    assert_eq!(decode(&raw).get(&1), Some(&Value::Varint(2)));
+    let decoded = decode(&raw);
+    assert_eq!(
+        decoded.get(&1),
+        Some(&vec![Value::Varint(1), Value::Varint(2)])
+    );
+}
+
+#[test]
+fn encodes_repeated_field_as_repeated_keys() {
+    // 多值字段编码时每个元素写一次同号 key。
+    let mut m = Message::new();
+    m.insert(1, vec![Value::Varint(1), Value::Varint(2)]);
+    assert_eq!(encode(&m), vec![0x08, 0x01, 0x08, 0x02]);
+}
+
+#[test]
+fn roundtrip_repeated_field() {
+    let mut m = Message::new();
+    m.insert(1, vec![Value::Varint(1), Value::Varint(2)]);
+    m.insert(
+        2,
+        vec![Value::Bytes(b"a".to_vec()), Value::Bytes(b"b".to_vec())],
+    );
+    assert_eq!(decode(&encode(&m)), m);
 }
 
 #[test]

@@ -143,7 +143,8 @@ fn main() -> ExitCode {
             for spec in &fields {
                 match parse_field(spec) {
                     Ok((no, v)) => {
-                        msg.insert(no, v);
+                        // 同号字段可重复传入，正好对应 protobuf 的 repeated 字段。
+                        msg.entry(no).or_default().push(v);
                     }
                     Err(e) => {
                         eprintln!("{e}");

@@ -8,7 +8,11 @@ pub enum Value {
     Fixed64(u64),
 }
 
-pub type Message = BTreeMap<u32, Value>;
+/// 字段号 → 该字段出现的**全部**值。
+///
+/// protobuf 的 repeated 字段在 wire 上就是同号字段重复出现，因此必须保留
+/// 每个值；若退化成单值映射，多元素 repeated 字段只会剩下最后一个。
+pub type Message = BTreeMap<u32, Vec<Value>>;
 
 fn put_varint(out: &mut Vec<u8>, mut n: u64) {
     loop {
@@ -26,24 +30,27 @@ fn put_varint(out: &mut Vec<u8>, mut n: u64) {
 #[allow(clippy::identity_op)]
 pub fn encode(msg: &Message) -> Vec<u8> {
     let mut out = Vec::new();
-    for (&field, value) in msg {
-        match value {
-            Value::Varint(v) => {
-                put_varint(&mut out, ((field as u64) << 3) | 0);
-                put_varint(&mut out, *v);
-            }
-            Value::Bytes(b) => {
-                put_varint(&mut out, ((field as u64) << 3) | 2);
-                put_varint(&mut out, b.len() as u64);
-                out.extend_from_slice(b);
-            }
-            Value::Fixed32(v) => {
-                put_varint(&mut out, ((field as u64) << 3) | 5);
-                out.extend_from_slice(&v.to_le_bytes());
-            }
-            Value::Fixed64(v) => {
-                put_varint(&mut out, ((field as u64) << 3) | 1);
-                out.extend_from_slice(&v.to_le_bytes());
+    for (&field, values) in msg {
+        // 同号字段按值逐个写出：repeated 字段在 wire 上就是重复的同号 key。
+        for value in values {
+            match value {
+                Value::Varint(v) => {
+                    put_varint(&mut out, ((field as u64) << 3) | 0);
+                    put_varint(&mut out, *v);
+                }
+                Value::Bytes(b) => {
+                    put_varint(&mut out, ((field as u64) << 3) | 2);
+                    put_varint(&mut out, b.len() as u64);
+                    out.extend_from_slice(b);
+                }
+                Value::Fixed32(v) => {
+                    put_varint(&mut out, ((field as u64) << 3) | 5);
+                    out.extend_from_slice(&v.to_le_bytes());
+                }
+                Value::Fixed64(v) => {
+                    put_varint(&mut out, ((field as u64) << 3) | 1);
+                    out.extend_from_slice(&v.to_le_bytes());
+                }
             }
         }
     }
@@ -117,7 +124,8 @@ pub fn decode(raw: &[u8]) -> Message {
             }
             _ => break,
         };
-        out.insert(field, value);
+        // 同号字段追加而非覆盖：repeated 字段的每个元素都必须保留。
+        out.entry(field).or_default().push(value);
     }
     out
 }

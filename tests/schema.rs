@@ -41,8 +41,8 @@ fn read_only_classification() {
 fn maps_field_numbers_to_names() {
     let s = Schema::from_json_str(SAMPLE).unwrap();
     let mut m = Message::new();
-    m.insert(3, Value::Bytes(b"/volume1/demo".to_vec()));
-    m.insert(8, Value::Varint(50));
+    m.insert(3, vec![Value::Bytes(b"/volume1/demo".to_vec())]);
+    m.insert(8, vec![Value::Varint(50)]);
     let j = s.message_to_json("demo.Req", &m);
     assert_eq!(j["path"], "/volume1/demo");
     assert_eq!(j["limit"], 50);
@@ -52,7 +52,7 @@ fn maps_field_numbers_to_names() {
 fn resolves_enum_symbol() {
     let s = Schema::from_json_str(SAMPLE).unwrap();
     let mut m = Message::new();
-    m.insert(16, Value::Varint(1));
+    m.insert(16, vec![Value::Varint(1)]);
     assert_eq!(s.message_to_json("demo.Req", &m)["mode"], "SAFE");
 }
 
@@ -60,7 +60,7 @@ fn resolves_enum_symbol() {
 fn unknown_field_is_preserved() {
     let s = Schema::from_json_str(SAMPLE).unwrap();
     let mut m = Message::new();
-    m.insert(99, Value::Varint(7));
+    m.insert(99, vec![Value::Varint(7)]);
     assert_eq!(to_json(&m, &s)["field_99"], 7);
 }
 
@@ -110,7 +110,7 @@ fn renders_float_field_as_number() {
     )
     .unwrap();
     let mut m = Message::new();
-    m.insert(1, Value::Fixed32(1.5f32.to_bits()));
+    m.insert(1, vec![Value::Fixed32(1.5f32.to_bits())]);
     assert_eq!(s.message_to_json("demo.F", &m)["ratio"], 1.5);
 }
 
@@ -123,7 +123,7 @@ fn renders_float_field_in_untyped_path_as_number() {
     )
     .unwrap();
     let mut m = Message::new();
-    m.insert(1, Value::Fixed32(1.5f32.to_bits()));
+    m.insert(1, vec![Value::Fixed32(1.5f32.to_bits())]);
     // 无类型入口拿不到字段定义，只能按位模式输出整数——这是有意的兜底行为。
     assert_eq!(to_json(&m, &s)["field_1"], 1069547520);
 }
@@ -139,7 +139,7 @@ fn varint_double_declaration_does_not_reinterpret_bits() {
     )
     .unwrap();
     let mut m = Message::new();
-    m.insert(2, Value::Varint(42));
+    m.insert(2, vec![Value::Varint(42)]);
     assert_eq!(s.message_to_json("demo.D", &m)["value"], 42);
 }
 
@@ -155,6 +155,86 @@ fn negative_enum_values_from_descriptor_are_wrapped() {
     )
     .unwrap();
     let mut m = Message::new();
-    m.insert(1, Value::Varint(u64::MAX));
+    m.insert(1, vec![Value::Varint(u64::MAX)]);
     assert_eq!(s.message_to_json("demo.E", &m)["code"], "ERR_IO");
+}
+
+#[test]
+fn repeated_field_renders_as_array() {
+    // 同号字段多值 → JSON 数组，顺序与 wire 上出现顺序一致。
+    let s = Schema::from_json_str(
+        r#"{
+      "messages": { "demo.R": [ {"no": 1, "name": "ids", "type": "int32"} ] }
+    }"#,
+    )
+    .unwrap();
+    let mut m = Message::new();
+    m.insert(1, vec![Value::Varint(1), Value::Varint(2)]);
+    assert_eq!(
+        s.message_to_json("demo.R", &m)["ids"],
+        serde_json::json!([1, 2])
+    );
+}
+
+#[test]
+fn single_value_field_stays_scalar() {
+    // 单值仍输出标量，保持既有输出契约不变。
+    let s = Schema::from_json_str(
+        r#"{
+      "messages": { "demo.R": [ {"no": 1, "name": "ids", "type": "int32"} ] }
+    }"#,
+    )
+    .unwrap();
+    let mut m = Message::new();
+    m.insert(1, vec![Value::Varint(7)]);
+    assert_eq!(s.message_to_json("demo.R", &m)["ids"], 7);
+}
+
+#[test]
+fn repeated_nested_message_renders_as_array_of_objects() {
+    // repeated message：每个元素都是独立的 Bytes，各自递归展开。
+    let s = Schema::from_json_str(
+        r#"{
+      "messages": {
+        "demo.List": [ {"no": 1, "name": "items", "type": "message", "type_name": "demo.Item"} ],
+        "demo.Item": [ {"no": 1, "name": "name", "type": "string"} ]
+      }
+    }"#,
+    )
+    .unwrap();
+    let mut m = Message::new();
+    m.insert(
+        1,
+        vec![
+            Value::Bytes(vec![0x0a, 0x01, b'a']),
+            Value::Bytes(vec![0x0a, 0x01, b'b']),
+        ],
+    );
+    assert_eq!(
+        s.message_to_json("demo.List", &m)["items"],
+        serde_json::json!([{"name": "a"}, {"name": "b"}])
+    );
+}
+
+#[test]
+fn untyped_path_renders_repeated_field_as_array() {
+    let s = Schema::from_json_str(r#"{"messages": {}}"#).unwrap();
+    let mut m = Message::new();
+    m.insert(1, vec![Value::Varint(1), Value::Varint(2)]);
+    assert_eq!(to_json(&m, &s)["field_1"], serde_json::json!([1, 2]));
+}
+
+#[test]
+fn empty_value_vector_is_skipped() {
+    // 空 Vec 不应产生 null 字段。
+    let s = Schema::from_json_str(
+        r#"{
+      "messages": { "demo.R": [ {"no": 1, "name": "ids", "type": "int32"} ] }
+    }"#,
+    )
+    .unwrap();
+    let mut m = Message::new();
+    m.insert(1, vec![]);
+    assert!(s.message_to_json("demo.R", &m).get("ids").is_none());
+    assert!(to_json(&m, &s).get("field_1").is_none());
 }
