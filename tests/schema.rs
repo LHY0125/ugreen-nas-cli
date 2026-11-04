@@ -373,3 +373,30 @@ fn schema_without_repeated_key_still_loads() {
     // 没有 repeated 标记 → 不做 packed 解包，按十六进制兜底。
     assert_eq!(s.message_to_json("demo.P", &m)["ids"], "fffefd");
 }
+
+#[test]
+fn negative_int32_renders_as_signed() {
+    let s = Schema::from_json_str(r#"{
+      "messages": { "demo.T": [ {"no": 1, "name": "temperature", "type": "int32"} ] },
+      "enums": {}, "services": {}, "methods": {}
+    }"#).unwrap();
+    let mut m = Message::new();
+    // -1 在 protobuf 中编码为 10 字节 varint，解码后是 u64::MAX
+    m.insert(1, vec![Value::Varint(u64::MAX)]);
+    assert_eq!(s.message_to_json("demo.T", &m)["temperature"], -1);
+}
+
+#[test]
+fn sint32_zigzag_decodes_correctly() {
+    let s = Schema::from_json_str(r#"{
+      "messages": { "demo.T": [ {"no": 1, "name": "v", "type": "sint32"} ] },
+      "enums": {}, "services": {}, "methods": {}
+    }"#).unwrap();
+    let mut m = Message::new();
+    // zigzag: -1 → 1, 1 → 2
+    m.insert(1, vec![Value::Varint(1)]);
+    assert_eq!(s.message_to_json("demo.T", &m)["v"], -1);
+    let mut m2 = Message::new();
+    m2.insert(1, vec![Value::Varint(2)]);
+    assert_eq!(s.message_to_json("demo.T", &m2)["v"], 1);
+}

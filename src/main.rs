@@ -139,6 +139,22 @@ fn run_read(
             return ExitCode::from(2);
         }
     };
+    // 运行时 fail-closed：只读域不带 --yes 闸门，因此必须确认 schema 里该方法确实是 read。
+    // 若有人把写方法加进只读域，这里会拒绝而不是静默放行（release 构建同样生效）。
+    match schema.method(method) {
+        Some(info) if nascli::schema::is_read_only(&info.operation) => {}
+        Some(info) => {
+            eprintln!(
+                "内部错误：{method} 在只读命令域中，但 schema 标记为 [{}]；已拒绝执行",
+                info.operation
+            );
+            return ExitCode::from(2);
+        }
+        None => {
+            eprintln!("内部错误：schema 中找不到 {method}；已拒绝执行");
+            return ExitCode::from(2);
+        }
+    }
     match nascli::commands::system::run(&ctx.client, socket, method) {
         Ok(resp) => {
             let data = match schema.response_type(method) {

@@ -152,6 +152,14 @@ pub fn build_message(
     let mut m: Message = BTreeMap::new();
     m.insert(path_no, vec![Value::Bytes(path.as_bytes().to_vec())]);
 
+    // `del` 必须显式发送 forever=false：若服务端把该字段声明为 optional bool
+    // 并在缺省时按 true 处理，省略会导致永久删除，与「默认移入回收站」的承诺不符。
+    if action == "del" {
+        if let Some(no) = schema.field_no(&req_type, "forever") {
+            m.insert(no, vec![Value::Varint(0)]);
+        }
+    }
+
     // 分页只对 `ls` 有意义；其余动作忽略 --page / --limit。
     if action == "ls" {
         for (name, value) in [("page", page), ("limit", limit)] {

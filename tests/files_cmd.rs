@@ -13,13 +13,18 @@ const SAMPLE: &str = r#"{
     ],
     "ugidl.filesystem.cli.StatRequest": [
       {"no": 1, "name": "path", "type": "string"}
+    ],
+    "ugidl.filesystem.cli.DelPathRequest": [
+      {"no": 1, "name": "forever", "type": "bool"},
+      {"no": 2, "name": "path", "type": "string"}
     ]
   },
   "enums": {},
   "services": {
     "ugidl.filesystem.Filesystem": {
       "CategoryOrFileDirList": {"in": "ugidl.filesystem.cli.FileDirListRequest", "out": "x", "server_streaming": false},
-      "Stat": {"in": "ugidl.filesystem.cli.StatRequest", "out": "x", "server_streaming": false}
+      "Stat": {"in": "ugidl.filesystem.cli.StatRequest", "out": "x", "server_streaming": false},
+      "DelPath": {"in": "ugidl.filesystem.cli.DelPathRequest", "out": "x", "server_streaming": false}
     }
   },
   "methods": {}
@@ -159,4 +164,18 @@ fn multi_param_action_is_not_gated_by_path() {
 #[test]
 fn non_empty_path_passes_target_gate() {
     assert!(require_target("stat", "/volume1/demo").is_ok());
+}
+
+#[test]
+fn del_explicitly_sends_forever_false() {
+    let s = schema();
+    let (_, method, _) = resolve("del").unwrap();
+    let m = build_message(&s, method, "del", "/volume1/demo/x", None, None).unwrap();
+    // 必须显式发送 forever=false，不能依赖服务端缺省值
+    assert_eq!(
+        m.get(&1),
+        Some(&vec![Value::Varint(0)]),
+        "del 必须显式发送 forever=0（移入回收站），实际: {m:?}"
+    );
+    assert_eq!(m.get(&2), Some(&vec![Value::Bytes(b"/volume1/demo/x".to_vec())]));
 }

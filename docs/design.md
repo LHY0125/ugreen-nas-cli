@@ -347,7 +347,7 @@ CLI 侧无可做的判别，需上游补充字段。
 
 ## 10. 技能
 
-位置：`D:\Code\.claude\skills\nascli\`（项目级，非公开仓库，可含个人环境信息）。
+位置：`~/.claude/skills/nascli\`（项目级，非公开仓库，可含个人环境信息）。
 
 结构对齐现有 `nas-compose-intake`：
 
@@ -427,7 +427,7 @@ nascli/                        # 公开仓库
 ├── docs/design.md
 └── README.md
 
-D:\Code\.claude\skills\nascli\ # 私有
+~/.claude/skills/nascli\ # 私有
 ├── SKILL.md
 └── DECISIONS.md
 ```

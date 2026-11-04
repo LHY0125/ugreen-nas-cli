@@ -2648,8 +2648,8 @@ git commit -m "feat(fs): file operations with unary listing workaround"
 ### Task 13: Claude Code 技能
 
 **Files:**
-- Create: `D:\Code\.claude\skills\nascli\SKILL.md`
-- Create: `D:\Code\.claude\skills\nascli\DECISIONS.md`
+- Create: `~/.claude/skills/nascli\SKILL.md`
+- Create: `~/.claude/skills/nascli\DECISIONS.md`
 
 **Interfaces:**
 - Consumes: 已安装的 `nascli` 二进制
@@ -2783,14 +2783,14 @@ CLI 覆盖 101 个方法，但技能文档只写 20 条左右。
 - [ ] **Step 3: 验证技能可被加载**
 
 ```bash
-ls "D:/Code/.claude/skills/nascli/"
+ls "~/.claude/skills/nascli/"
 ```
 Expected: `SKILL.md` 与 `DECISIONS.md`
 
-- [ ] **Step 4: 提交（技能在 D:\Code，非 nascli 仓库）**
+- [ ] **Step 4: 提交（技能在 ~/.claude/skills/nascli，非 nascli 仓库）**
 
 ```bash
-cd D:/Code && git status --short .claude/skills/nascli
+cd ~/.claude/skills/nascli && git status --short
 ```
 Expected: 若 `D:\Code` 非 git 仓库则跳过提交，仅保留文件
 
@@ -2915,4 +2915,4 @@ git commit -m "docs: add README and fixture sanitization policy"
 - [ ] 写类命令无 `--yes` 时退出码为 2
 - [ ] 流式方法返回退出码 5
 - [ ] 仓库内无真实环境信息
-- [ ] `D:\Code\.claude\skills\nascli\SKILL.md` 存在且可被 Claude Code 加载
+- [ ] `~/.claude/skills/nascli\SKILL.md` 存在且可被 Claude Code 加载

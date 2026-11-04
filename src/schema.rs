@@ -204,6 +204,16 @@ impl Schema {
                     if d.kind == "bool" {
                         return json!(*v != 0);
                     }
+                    if d.kind == "int32" || d.kind == "int64" {
+                        // protobuf 用 10 字节 varint 表示负数（符号扩展），需还原为有符号
+                        return json!(*v as i64);
+                    }
+                    if d.kind == "sint32" || d.kind == "sint64" {
+                        // zigzag 编码：n>=0 → 2n；n<0 → -2n-1
+                        let z = *v;
+                        let decoded = ((z >> 1) as i64) ^ -((z & 1) as i64);
+                        return json!(decoded);
+                    }
                 }
                 json!(*v)
             }

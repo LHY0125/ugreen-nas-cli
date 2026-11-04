@@ -89,7 +89,25 @@ impl Config {
             Some(p) => p.parse::<u16>().map_err(|_| ConfigError::BadPort(p))?,
             None => 9443,
         };
-        let insecure = insecure.map(|v| v != "0").unwrap_or(true);
+        // 安全开关必须 fail-closed：只有明确表示「关闭校验」的值才关闭。
+        // 无法识别的值按「严格校验」处理，避免用户写 false/no/off 却得到相反效果。
+        let insecure = match insecure.as_deref() {
+            None => true, // 默认接受自签名证书（NAS 现实约束）
+            Some(v) => {
+                let v = v.trim().to_ascii_lowercase();
+                match v.as_str() {
+                    "1" | "true" | "yes" | "on" => true,
+                    "0" | "false" | "no" | "off" => false,
+                    // 无法识别：按严格校验（fail-closed），并提示
+                    _ => {
+                        eprintln!(
+                            "警告：UGNAS_INSECURE=\"{v}\" 无法识别，按严格证书校验处理（等同 0）"
+                        );
+                        false
+                    }
+                }
+            }
+        };
         Ok(Self {
             host,
             port,
