@@ -24,13 +24,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # GitHub 的 Windows runner 默认已是 MSVC，这里显式固定，
-      # 避免本机 rust-toolchain 配置影响云端行为。
+      # 显式固定稳定工具链，避免 runner 预装版本漂移；Windows runner 的
+      # 默认目标即 MSVC。minimal profile 不含 rustfmt/clippy，故显式补装。
+      # 这几个命令在 bash 与 pwsh 下语义一致，用各平台默认 shell 即可。
       - name: 固定 Rust 工具链
-        shell: pwsh
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
+          rustup component add rustfmt clippy
           rustup show
 
       - name: 缓存 Cargo
@@ -46,9 +47,17 @@ jobs:
         run: cargo test
 
       # Python 提取器的测试只在 Linux 跑一次，避免三平台重复。
+      # 用 setup-python 提供的解释器：Ubuntu 24.04 起系统 Python 受 PEP 668
+      # 保护，直接 pip install 会报 externally-managed-environment。
+      - name: 安装 Python
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Python 提取器测试
         if: matrix.os == 'ubuntu-latest'
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install pytest
-          python3 -m pytest tools/tests -v
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+          python -m pytest tools/tests -v
