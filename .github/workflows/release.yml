@@ -141,8 +141,13 @@ jobs:
         run: |
           $tag = $env:RELEASE_TAG
           $notes = @("## nascli $tag", "")
+          # 首个 tag 没有前驱，git describe 会失败（退出 128）——这是预期情况。
+          # 但 $LASTEXITCODE 是粘滞的：后续的 if / += / Set-Content 都是 cmdlet，
+          # 不会重置它，脚本会带着 128 退出而被判失败。因此这里显式归零。
           $prev = git describe --tags --abbrev=0 "$tag^" 2>$null
-          if ($LASTEXITCODE -eq 0 -and $prev) {
+          $describeOk = ($LASTEXITCODE -eq 0)
+          $LASTEXITCODE = 0
+          if ($describeOk -and $prev) {
             $notes += '### 变更'
             $notes += ''
             $notes += git log --pretty=format:'- %s (%h)' "$prev..$tag"
