@@ -8,8 +8,10 @@ on:
     tags:
       - 'v*'
 
+# 默认只读；写权限只下沉到 release job。build job 只读代码、上传 artifact，
+# 不需要也不应持有 contents: write。
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -30,11 +32,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # tag 名由推送者控制，走 env 传入而非 `${{ }}` 直插脚本，
+      # 避免引号逃逸后在 PowerShell 中执行任意命令。
       - name: 解析版本号
         id: ver
+        env:
+          REF_NAME: ${{ github.ref_name }}
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = $env:REF_NAME
           if ($tag -notmatch '^v(?<v>\d+\.\d+\.\d+)$') {
             throw "发布 tag 必须符合 vMAJOR.MINOR.PATCH，当前为: $tag"
           }
@@ -93,6 +99,8 @@ jobs:
     name: 创建 Release
     needs: build
     runs-on: windows-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -112,8 +120,10 @@ jobs:
 
       - name: 生成发布日志
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = $env:RELEASE_TAG
           $notes = @("## nascli $tag", "")
           $prev = git describe --tags --abbrev=0 "$tag^" 2>$null
           if ($LASTEXITCODE -eq 0 -and $prev) {
@@ -129,16 +139,17 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          $existing = gh release view "${{ github.ref_name }}" --repo "$env:GITHUB_REPOSITORY" --json tagName 2>$null
+          $existing = gh release view "$env:RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" --json tagName 2>$null
           if ($LASTEXITCODE -eq 0 -and $existing) {
             Write-Host "Release 已存在，跳过。"
             exit 0
           }
           $assets = Get-ChildItem -LiteralPath 'assets' -File | ForEach-Object { $_.FullName }
-          gh release create "${{ github.ref_name }}" `
+          gh release create "$env:RELEASE_TAG" `
             --repo "$env:GITHUB_REPOSITORY" `
-            --title "nascli ${{ github.ref_name }}" `
+            --title "nascli $env:RELEASE_TAG" `
             --notes-file RELEASE_NOTES.md `
             --latest `
             @assets
