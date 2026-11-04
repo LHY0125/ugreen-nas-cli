@@ -1,0 +1,54 @@
+# nascli — 持续集成
+# push main / PR / 手动触发时，在三个平台跑格式、lint 与测试。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: 质量门（${{ matrix.os }}）
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # GitHub 的 Windows runner 默认已是 MSVC，这里显式固定，
+      # 避免本机 rust-toolchain 配置影响云端行为。
+      - name: 固定 Rust 工具链
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup show
+
+      - name: 缓存 Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: 格式检查
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: 测试
+        run: cargo test
+
+      # Python 提取器的测试只在 Linux 跑一次，避免三平台重复。
+      - name: Python 提取器测试
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pytest
+          python3 -m pytest tools/tests -v
