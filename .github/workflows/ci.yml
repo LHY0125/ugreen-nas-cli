@@ -1,0 +1,63 @@
+# nascli — 持续集成
+# push main / PR / 手动触发时，在三个平台跑格式、lint 与测试。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: 质量门（${{ matrix.os }}）
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 显式固定稳定工具链，避免 runner 预装版本漂移；Windows runner 的
+      # 默认目标即 MSVC。minimal profile 不含 rustfmt/clippy，故显式补装。
+      # 这几个命令在 bash 与 pwsh 下语义一致，用各平台默认 shell 即可。
+      - name: 固定 Rust 工具链
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup component add rustfmt clippy
+          rustup show
+
+      - name: 缓存 Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: 格式检查
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: 测试
+        run: cargo test
+
+      # Python 提取器的测试只在 Linux 跑一次，避免三平台重复。
+      # 用 setup-python 提供的解释器：Ubuntu 24.04 起系统 Python 受 PEP 668
+      # 保护，直接 pip install 会报 externally-managed-environment。
+      - name: 安装 Python
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Python 提取器测试
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+          python -m pytest tools/tests -v

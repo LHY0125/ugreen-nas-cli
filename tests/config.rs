@@ -1,5 +1,9 @@
-use nascli::config::{default_config_path, redact, Config, ConfigError, DEFAULT_CONFIG_FILE};
+use nascli::config::{
+    config_root_for, default_config_path, redact, Config, ConfigError, Platform,
+    DEFAULT_CONFIG_FILE,
+};
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use tempfile::{tempdir, NamedTempFile};
 
 fn cfg(host: &str, token: &str) -> Config {
@@ -19,9 +23,63 @@ fn parse(text: &str) -> Result<Config, ConfigError> {
 }
 
 #[test]
-fn default_path_is_config_toml() {
+fn config_file_name_is_stable() {
     assert_eq!(DEFAULT_CONFIG_FILE, "config.toml");
-    assert_eq!(default_config_path().to_str(), Some("config.toml"));
+}
+
+#[test]
+fn windows_uses_appdata() {
+    let appdata = Path::new("C:/Users/u/AppData/Roaming");
+    let root = config_root_for(Platform::Windows, Some(appdata), None, None);
+    assert_eq!(root, Some(PathBuf::from("C:/Users/u/AppData/Roaming")));
+}
+
+#[test]
+fn windows_without_appdata_has_no_root() {
+    let root = config_root_for(
+        Platform::Windows,
+        None,
+        Some(Path::new("/xdg")),
+        Some(Path::new("/home/u")),
+    );
+    assert_eq!(root, None);
+}
+
+#[test]
+fn linux_prefers_xdg_over_home() {
+    let root = config_root_for(
+        Platform::Linux,
+        None,
+        Some(Path::new("/xdg")),
+        Some(Path::new("/home/u")),
+    );
+    assert_eq!(root, Some(PathBuf::from("/xdg")));
+}
+
+#[test]
+fn linux_falls_back_to_home_dot_config() {
+    let root = config_root_for(Platform::Linux, None, None, Some(Path::new("/home/u")));
+    assert_eq!(root, Some(PathBuf::from("/home/u/.config")));
+}
+
+#[test]
+fn macos_uses_application_support() {
+    let root = config_root_for(Platform::MacOs, None, None, Some(Path::new("/Users/u")));
+    assert_eq!(
+        root,
+        Some(PathBuf::from("/Users/u/Library/Application Support"))
+    );
+}
+
+#[test]
+fn default_path_ends_with_nascli_config_toml() {
+    let path = default_config_path();
+    assert!(
+        path.ends_with(Path::new("nascli").join(DEFAULT_CONFIG_FILE))
+            || path == Path::new(DEFAULT_CONFIG_FILE),
+        "默认路径应以 nascli/config.toml 结尾，实际为 {}",
+        path.display()
+    );
 }
 
 #[test]

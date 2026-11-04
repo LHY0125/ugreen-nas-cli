@@ -3,7 +3,7 @@ use nascli::client::Client;
 use nascli::commands::{
     emit_err, emit_ok, is_forced_write, operation_of, parse_field, require_yes, Ctx,
 };
-use nascli::config::Config;
+use nascli::config::{default_config_path, Config};
 use nascli::schema::{is_read_only, Schema};
 use nascli::wire::Message;
 use std::collections::BTreeMap;
@@ -16,14 +16,12 @@ const SCHEMA_JSON: &str = include_str!("../spec/schema.json");
 #[derive(Parser)]
 #[command(name = "nascli", version, about = "UGOS Pro OpenCLI 客户端")]
 struct Cli {
-    /// TOML 配置文件路径（默认当前目录的 config.toml）
-    #[arg(
-        long,
-        global = true,
-        value_name = "PATH",
-        default_value = "config.toml"
-    )]
-    config: PathBuf,
+    /// TOML 配置文件路径
+    ///
+    /// 未指定时优先读环境变量 UGNAS_CONFIG，
+    /// 再退回平台用户配置目录（Windows: %APPDATA%\nascli\config.toml）。
+    #[arg(long, global = true, value_name = "PATH")]
+    config: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
@@ -208,6 +206,16 @@ fn run_config(path: &Path, action: ConfigAction) -> ExitCode {
     }
 }
 
+/// 决议配置文件路径：`--config` > `UGNAS_CONFIG` > 平台默认目录。
+///
+/// 单一配置源：当前目录下的 `config.toml` 不再被隐式读取。
+/// 仓库内开发请显式传 `--config config.toml` 或设 `UGNAS_CONFIG`。
+fn resolve_config_path(explicit: Option<PathBuf>) -> PathBuf {
+    explicit
+        .or_else(|| std::env::var_os("UGNAS_CONFIG").map(PathBuf::from))
+        .unwrap_or_else(default_config_path)
+}
+
 /// 构造执行上下文：配置缺失视为参数错误（2），客户端构建失败视为网络错误（6）。
 fn build_ctx(config_path: &Path) -> Result<Ctx, ExitCode> {
     let cfg = Config::load_or_init(config_path).map_err(|e| {
@@ -285,7 +293,7 @@ fn expect_read(
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let config_path = cli.config;
+    let config_path = resolve_config_path(cli.config);
     let schema = match Schema::from_json_str(SCHEMA_JSON) {
         Ok(s) => s,
         Err(e) => {

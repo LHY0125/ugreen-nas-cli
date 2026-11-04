@@ -1,0 +1,174 @@
+# nascli — 自动发布
+# 推送 v* tag 时，在三个平台构建二进制并创建 GitHub Release。
+# 若该 tag 的 Release 已存在，则跳过发布；但构建仍会先跑完（探测发生在 release job 内，
+# 此时三个平台的 build 已完成——只省下发布，不省构建）。
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# 默认只读；写权限只下沉到 release job。build job 只读代码、上传 artifact，
+# 不需要也不应持有 contents: write。
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: 构建（${{ matrix.os }}）
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: windows
+          - os: ubuntu-latest
+            artifact: linux
+          # macOS 托管标签默认是 arm64；必须用 -intel 才能产出 x64 产物。
+          # 现存 Intel x64 标签为 macos-15-intel / macos-26-intel（旧标签已于 2025-12-04 退役）。
+          - os: macos-15-intel
+            artifact: macos
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # tag 名由推送者控制，走 env 传入而非 `${{ }}` 直插脚本，
+      # 避免引号逃逸后在 PowerShell 中执行任意命令。
+      - name: 解析版本号
+        id: ver
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        shell: pwsh
+        run: |
+          $tag = $env:REF_NAME
+          if ($tag -notmatch '^v(?<v>\d+\.\d+\.\d+)$') {
+            throw "发布 tag 必须符合 vMAJOR.MINOR.PATCH，当前为: $tag"
+          }
+          "version=$($Matches['v'])" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # 只认 [package] 段里的 version；不依赖它在文件中排第一，避免将来在
+      # 前面插入别的段时取错值。
+      - name: 校验 Cargo.toml 版本一致
+        shell: pwsh
+        run: |
+          $inPackage = $false
+          $cargoVersion = $null
+          foreach ($line in Get-Content -LiteralPath 'Cargo.toml') {
+            if ($line -match '^\s*\[([^\]]+)\]') {
+              $inPackage = ($Matches[1].Trim() -eq 'package')
+              continue
+            }
+            if ($inPackage -and $line -match '^\s*version\s*=\s*"([^"]+)"') {
+              $cargoVersion = $Matches[1]
+              break
+            }
+          }
+          if (-not $cargoVersion) {
+            throw '无法从 Cargo.toml 的 [package] 段读取 version'
+          }
+          if ($cargoVersion -ne "${{ steps.ver.outputs.version }}") {
+            throw "tag 版本 ${{ steps.ver.outputs.version }} 与 Cargo.toml=$cargoVersion 不一致"
+          }
+
+      - name: 固定 Rust 工具链
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: 缓存 Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: 构建（Windows）
+        if: matrix.artifact == 'windows'
+        shell: pwsh
+        run: |
+          cargo build --release --locked
+          Copy-Item -LiteralPath 'target\release\nascli.exe' `
+            -Destination "nascli_${{ steps.ver.outputs.version }}_x64.exe"
+
+      - name: 构建（Linux）
+        if: matrix.artifact == 'linux'
+        run: |
+          cargo build --release --locked
+          tar -czf "nascli_${{ steps.ver.outputs.version }}_linux_x64.tar.gz" \
+            -C target/release nascli
+
+      - name: 构建（macOS）
+        if: matrix.artifact == 'macos'
+        run: |
+          cargo build --release --locked
+          tar -czf "nascli_${{ steps.ver.outputs.version }}_macos_x64.tar.gz" \
+            -C target/release nascli
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: nascli_*
+          if-no-files-found: error
+
+  release:
+    name: 创建 Release
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 下载全部构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: 列产物
+        shell: pwsh
+        run: Get-ChildItem -LiteralPath 'assets' | Select-Object Name, Length
+
+      - name: 生成发布日志
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $tag = $env:RELEASE_TAG
+          $notes = @("## nascli $tag", "")
+          $prev = git describe --tags --abbrev=0 "$tag^" 2>$null
+          if ($LASTEXITCODE -eq 0 -and $prev) {
+            $notes += '### 变更'
+            $notes += ''
+            $notes += git log --pretty=format:'- %s (%h)' "$prev..$tag"
+          } else {
+            $notes += '首次发布'
+          }
+          $notes | Set-Content -LiteralPath 'RELEASE_NOTES.md' -Encoding utf8
+
+      - name: 创建 GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $existing = gh release view "$env:RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" --json tagName 2>$null
+          if ($LASTEXITCODE -eq 0 -and $existing) {
+            Write-Host "Release 已存在，跳过。"
+            exit 0
+          }
+          $assets = Get-ChildItem -LiteralPath 'assets' -File | ForEach-Object { $_.FullName }
+          if ($assets.Count -ne 3) {
+            throw "期望 3 个发布资产，实际 $($assets.Count) 个：$($assets -join ', ')"
+          }
+          gh release create "$env:RELEASE_TAG" `
+            --repo "$env:GITHUB_REPOSITORY" `
+            --title "nascli $env:RELEASE_TAG" `
+            --notes-file RELEASE_NOTES.md `
+            --latest `
+            @assets
