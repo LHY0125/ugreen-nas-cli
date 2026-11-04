@@ -1,6 +1,7 @@
 # nascli — 自动发布
 # 推送 v* tag 时，在三个平台构建二进制并创建 GitHub Release。
-# 若该 tag 的 Release 已存在，则跳过构建与发布。
+# 若该 tag 的 Release 已存在，则跳过发布；但构建仍会先跑完（探测发生在 release job 内，
+# 此时三个平台的 build 已完成——只省下发布，不省构建）。
 name: Release
 
 on:
@@ -25,7 +26,9 @@ jobs:
             artifact: windows
           - os: ubuntu-latest
             artifact: linux
-          - os: macos-13
+          # macOS 托管标签默认是 arm64；必须用 -intel 才能产出 x64 产物。
+          # 现存 Intel x64 标签为 macos-15-intel / macos-26-intel（旧标签已于 2025-12-04 退役）。
+          - os: macos-15-intel
             artifact: macos
 
     steps:
@@ -46,15 +49,28 @@ jobs:
           }
           "version=$($Matches['v'])" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
+      # 只认 [package] 段里的 version；不依赖它在文件中排第一，避免将来在
+      # 前面插入别的段时取错值。
       - name: 校验 Cargo.toml 版本一致
         shell: pwsh
         run: |
-          $cargo = Get-Content -LiteralPath 'Cargo.toml' -Raw
-          if ($cargo -notmatch '(?m)^version\s*=\s*"([^"]+)"') {
-            throw '无法从 Cargo.toml 读取 version'
+          $inPackage = $false
+          $cargoVersion = $null
+          foreach ($line in Get-Content -LiteralPath 'Cargo.toml') {
+            if ($line -match '^\s*\[([^\]]+)\]') {
+              $inPackage = ($Matches[1].Trim() -eq 'package')
+              continue
+            }
+            if ($inPackage -and $line -match '^\s*version\s*=\s*"([^"]+)"') {
+              $cargoVersion = $Matches[1]
+              break
+            }
           }
-          if ($Matches[1] -ne "${{ steps.ver.outputs.version }}") {
-            throw "tag 版本 ${{ steps.ver.outputs.version }} 与 Cargo.toml=$($Matches[1]) 不一致"
+          if (-not $cargoVersion) {
+            throw '无法从 Cargo.toml 的 [package] 段读取 version'
+          }
+          if ($cargoVersion -ne "${{ steps.ver.outputs.version }}") {
+            throw "tag 版本 ${{ steps.ver.outputs.version }} 与 Cargo.toml=$cargoVersion 不一致"
           }
 
       - name: 固定 Rust 工具链
@@ -70,21 +86,21 @@ jobs:
         if: matrix.artifact == 'windows'
         shell: pwsh
         run: |
-          cargo build --release
+          cargo build --release --locked
           Copy-Item -LiteralPath 'target\release\nascli.exe' `
             -Destination "nascli_${{ steps.ver.outputs.version }}_x64.exe"
 
       - name: 构建（Linux）
         if: matrix.artifact == 'linux'
         run: |
-          cargo build --release
+          cargo build --release --locked
           tar -czf "nascli_${{ steps.ver.outputs.version }}_linux_x64.tar.gz" \
             -C target/release nascli
 
       - name: 构建（macOS）
         if: matrix.artifact == 'macos'
         run: |
-          cargo build --release
+          cargo build --release --locked
           tar -czf "nascli_${{ steps.ver.outputs.version }}_macos_x64.tar.gz" \
             -C target/release nascli
 
