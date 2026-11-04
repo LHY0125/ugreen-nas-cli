@@ -207,16 +207,18 @@ fn main() -> ExitCode {
                 eprintln!("{e}");
                 return ExitCode::from(2);
             }
+            // 目标参数闸门：写类动作必须有明确目标，空请求可能造成范围未限定的破坏；
+            // 只读但需要 container_id / port / dir 的动作同样不该发空请求。
+            let msg = nascli::commands::docker::empty();
+            if let Err(e) = nascli::commands::docker::require_target(&action, &msg) {
+                eprintln!("{e}");
+                return ExitCode::from(2);
+            }
             let ctx = match build_ctx() {
                 Ok(c) => c,
                 Err(code) => return code,
             };
-            match nascli::commands::docker::run(
-                &ctx.client,
-                socket,
-                method,
-                &nascli::commands::docker::empty(),
-            ) {
+            match nascli::commands::docker::run(&ctx.client, socket, method, &msg) {
                 Ok(resp) => {
                     let data = match schema.response_type(method) {
                         Some(t) => schema.message_to_json(&t, &resp),

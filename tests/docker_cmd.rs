@@ -1,4 +1,5 @@
-use nascli::commands::docker::resolve;
+use nascli::commands::docker::{empty, require_target, resolve};
+use nascli::wire::Value;
 
 /// 套接字字面量：`docker.rs` 里的常量是公开的，但测试侧仍写字面量，
 /// 顺便锁死套接字名本身（改错同样会红）。
@@ -105,4 +106,62 @@ fn write_actions_are_not_read() {
         let (_, _, op) = resolve(action).unwrap();
         assert_ne!(op, "read", "写类动作被误标为只读：{action}");
     }
+}
+
+/// 写类动作没有目标参数时必须 fail-closed，不能把空请求当成「全部目标」。
+#[test]
+fn write_actions_without_target_are_rejected() {
+    for action in [
+        "start",
+        "stop",
+        "restart",
+        "pull",
+        "compose-start",
+        "compose-stop",
+        "compose-restart",
+        "compose-delete",
+        "rebuild",
+    ] {
+        let err = require_target(action, &empty()).expect_err(&format!("{action} 应被拒绝"));
+        assert!(err.contains("需要目标参数"), "action={action}：{err}");
+        assert!(err.contains("nascli call"), "action={action}：{err}");
+        assert!(
+            err.contains("--yes"),
+            "写类动作的提示应带 --yes：{action}：{err}"
+        );
+    }
+}
+
+/// 只读但需要 container_id / port / dir 的动作同样不该发空请求。
+#[test]
+fn read_actions_needing_target_are_rejected() {
+    for action in ["logs", "port-check", "dir-check"] {
+        let err = require_target(action, &empty()).expect_err(&format!("{action} 应被拒绝"));
+        assert!(err.contains("需要目标参数"), "action={action}：{err}");
+        assert!(err.contains("nascli call"), "action={action}：{err}");
+        // 只读动作不需要 --yes，提示里不应出现，避免误导。
+        assert!(
+            !err.contains("--yes"),
+            "只读动作不应提示 --yes：{action}：{err}"
+        );
+    }
+}
+
+/// 不需要目标参数的动作保持放行。
+#[test]
+fn actions_without_target_requirement_pass() {
+    for action in ["containers", "images", "compose", "usage"] {
+        assert!(
+            require_target(action, &empty()).is_ok(),
+            "action={action} 不应被目标闸门拦截"
+        );
+    }
+}
+
+/// 请求体非空时放行，为将来的参数化留出口。
+#[test]
+fn non_empty_request_passes_target_gate() {
+    let mut msg = empty();
+    msg.insert(1, vec![Value::Bytes(b"demo".to_vec())]);
+    assert!(require_target("stop", &msg).is_ok());
 }
