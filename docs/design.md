@@ -221,8 +221,9 @@ CLI 只读取一个 TOML 文件。路径按三级决议：`--config <path>` → 
 `UGNAS_CONFIG` → 平台用户配置目录（Windows `%APPDATA%\nascli\config.toml`；
 Linux `$XDG_CONFIG_HOME/nascli/config.toml`，未设置则
 `~/.config/nascli/config.toml`；macOS `~/Library/Application Support/nascli/config.toml`）。
-正常安装环境下，当前目录的 `config.toml` 不会被读取（仅当 `APPDATA` /
-`XDG_CONFIG_HOME` / `HOME` 全部缺失时才退回当前目录的 `config.toml`）。
+正常安装环境下，当前目录的 `config.toml` 不会被读取（当平台配置目录无法确定时
+——Windows 缺 `APPDATA`、macOS 缺 `HOME`、Linux 的 `XDG_CONFIG_HOME` 与 `HOME` 都缺
+——才退回当前目录的 `config.toml`）。
 
 
 | 字段       | 必填 | 默认   | 说明                                     |
