@@ -23,6 +23,8 @@ UGOS Pro 的访问令牌背后是一套 **gRPC-over-HTTP** 接口（OpenCLI）�
 - 运行：无需额外依赖，单个可执行文件
 - 从源码构建：Rust 1.88+
 - 重新提取 schema（仅固件升级后需要）：Python 3.10+，且需要到 NAS 的 SSH 访问
+  - NAS 上需要有 `python3`（提取器在 NAS 本地运行）
+  - SSH 用户名与 `~/.ssh/config` 不一致时，提取器加 `--ssh-user <user>`
 - NAS 上已创建访问令牌：**个人中心 → 本地账号 → 访问令牌**
 
 ## 安装
