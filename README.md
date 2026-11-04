@@ -75,7 +75,7 @@ UGNAS_CONFIG=/path/to/config.toml nascli storage volumes  # 2. 环境变量
 nascli storage volumes                                  # 3. 平台默认目录
 ```
 
-当前目录的 `config.toml` **不会**被隐式读取；在仓库内开发时请用上面的参数或环境变量指定。
+正常安装环境下，当前目录的 `config.toml` **不会**被读取；仅当 `APPDATA` / `XDG_CONFIG_HOME` / `HOME` 全部缺失时，才退回当前目录的 `config.toml`。在仓库内开发时请用上面的参数或环境变量指定。
 
 ### 字段
 

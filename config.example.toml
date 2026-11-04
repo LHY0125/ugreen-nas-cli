@@ -1,7 +1,7 @@
 # nascli 配置示例：复制到下列路径之一后填写真实值。
 # 推荐放置位置（nascli config init 会自动写到这里）：
 #   Windows: %APPDATA%\nascli\config.toml
-#   Linux:   ~/.config/nascli/config.toml
+#   Linux:   $XDG_CONFIG_HOME/nascli/config.toml（未设置则 ~/.config/nascli/config.toml）
 #   macOS:   ~/Library/Application Support/nascli/config.toml
 #
 # 也可以用 --config <path> 或环境变量 UGNAS_CONFIG 指定其他位置。

@@ -96,7 +96,7 @@ clap 解析参数
 
 ### 三条边界
 
-1. **CLI 不硬编码字段号** —— 全部来自 `spec/schema.json`，固件升级只需重跑提取器。
+1. **CLI 不硬编码字段号** —— 全部来自 `spec/schema.json`，固件升级需重跑提取器并提交更新后的 schema。
 2. **编解码器通用** —— 一套 `encode`/`decode` 服务全部方法。
 3. **命令表静态** —— 每个命令声明方法 + 参数映射，`--help` 可读、参数可校验。
 
@@ -221,7 +221,8 @@ CLI 只读取一个 TOML 文件。路径按三级决议：`--config <path>` → 
 `UGNAS_CONFIG` → 平台用户配置目录（Windows `%APPDATA%\nascli\config.toml`；
 Linux `$XDG_CONFIG_HOME/nascli/config.toml`，未设置则
 `~/.config/nascli/config.toml`；macOS `~/Library/Application Support/nascli/config.toml`）。
-当前目录的 `config.toml` 不再被隐式读取。
+正常安装环境下，当前目录的 `config.toml` 不会被读取（仅当 `APPDATA` /
+`XDG_CONFIG_HOME` / `HOME` 全部缺失时才退回当前目录的 `config.toml`）。
 
 
 | 字段       | 必填 | 默认   | 说明                                     |
@@ -231,7 +232,8 @@ Linux `$XDG_CONFIG_HOME/nascli/config.toml`，未设置则
 | `port`     | 否   | `9443` | OpenCLI HTTPS 端口                       |
 | `insecure` | 否   | `true` | 接受自签名证书；`false` 为严格校验       |
 
-未知键会直接报错。配置优先级只有一层：`--config` 选择文件，文件内容即最终配置。
+未知键会直接报错。配置文件本身是唯一的配置源，不做字段级合并；
+文件位置由上述三级决议决定。
 
 首次运行需要配置的命令时，如果当前是交互式终端且文件不存在，CLI 自动进入初始化向导；
 非交互环境需先运行 `nascli config init`。修改入口：

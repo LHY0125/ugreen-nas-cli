@@ -112,7 +112,8 @@ main.rs (clap)
 
 CLI 只读取一个 TOML 文件。路径决议顺序：`--config <path>` →
 环境变量 `UGNAS_CONFIG` → 平台用户配置目录（Windows 为
-`%APPDATA%\nascli\config.toml`）。当前目录的 `config.toml` **不会**被隐式读取。
+`%APPDATA%\nascli\config.toml`）。正常安装环境下，当前目录的 `config.toml`
+**不会**被读取（平台配置目录的环境变量全部缺失时才退回当前目录）。
 
 
 | 字段       | 默认     | 说明                               |
