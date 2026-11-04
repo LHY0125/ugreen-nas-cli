@@ -61,7 +61,7 @@ main.rs (clap)
   → client.rs   HTTP POST + Bearer + 错误分类
 ```
 
-**关键设计：CLI 不硬编码任何字段号。** 命令只声明字段**名**（如 `"path"`），字段号由 `schema.field_no(request_type, "path")` 在运行时查出。固件升级即使调整字段号，只要字段名不变，CLI 代码无需改动——只需重跑提取器。
+**关键设计：CLI 不硬编码任何字段号。** 命令只声明字段**名**（如 `"path"`），字段号由 `schema.field_no(request_type, "path")` 在运行时查出。固件升级即使调整字段号，只要字段名不变，CLI 代码无需改动——只需重跑提取器并提交更新后的 schema。
 
 ### 各模块职责
 
