@@ -1,11 +1,12 @@
 //! `fs` 命令域：文件与目录操作。
 //!
 //! 这是参数最复杂的命令域，也是唯一含删除动作的域。服务端的 `Readdir` /
-//! `Find` / `Du` 是**服务端流式** RPC，OpenCLI 的 HTTP 接口不支持（返回
-//! `cardinality violation`），因此：
+//! `Find` / `Du` 声明为**服务端流式** RPC；OpenCLI 对 `Find` 会返回
+//! `cardinality violation`，但 `Du` 对部分目录能返回单条结果：
 //!
 //! - `ls` 改用一元的 `CategoryOrFileDirList`；
-//! - `du` / `find` 在 `resolve` 阶段直接报不支持，退出码 5。
+//! - `du` 实际调用 `Du`，大目录若触发流式限制再由 `client` 映射为退出码 5；
+//! - `find` 仍在 `resolve` 阶段直接报不支持，退出码 5。
 //!
 //! 字段号一律由 schema 按字段名查出：`Stat` 的 `path` 在字段 1，而
 //! `DelPath` 的 `path` 在字段 2——硬编码任何一处都会错。
@@ -26,7 +27,9 @@ pub const SINGLE_PATH: &[&str] = &[
     "cat",
     "getfattr",
     "recycle-status",
-    "path-perm",
+    "md5sum",
+    "sha256sum",
+    "du",
     "mkdir",
     "touch",
     "del",
@@ -41,8 +44,6 @@ pub const NEEDS_CALL: &[&str] = &[
     "rename",
     "cpmv",
     "echo",
-    "md5sum",
-    "sha256sum",
     "chtimes",
     "modify-acl",
     "share-mkdir",
@@ -53,7 +54,7 @@ pub const NEEDS_CALL: &[&str] = &[
 /// 与「未知子命令」必须区分：后者是参数错误（2）。若统一返回 5，智能体会
 /// 把拼错的子命令当成流式限制，转而去 `nascli call` 调一个错误的方法。
 pub fn is_streaming_unsupported(action: &str) -> bool {
-    matches!(action, "du" | "find")
+    matches!(action, "find")
 }
 
 /// `resolve` 失败时的退出码：流式方法不支持（5）与未知子命令（2）分开。
@@ -90,7 +91,7 @@ pub fn resolve(action: &str) -> Result<(&'static str, &'static str, &'static str
         "chtimes" => ("/ugidl.filesystem.Filesystem/Chtimes", "write"),
         "modify-acl" => ("/ugidl.filesystem.Filesystem/ModifyPathAcl", "write"),
         "share-mkdir" => ("/ugidl.filesystem.Filesystem/CreateShareFolder", "write"),
-        "du" => return Err("du 对应的服务端方法为流式 RPC，OpenCLI 的 HTTP 接口不支持".to_string()),
+        "du" => ("/ugidl.filesystem.Filesystem/Du", "read"),
         "find" => {
             return Err("find 对应的服务端方法为流式 RPC，OpenCLI 的 HTTP 接口不支持".to_string())
         }
@@ -121,7 +122,7 @@ pub fn require_target(action: &str, path: &str) -> Result<(), String> {
 
 /// 按 schema 里的**字段名**构造请求，不硬编码字段号。
 ///
-/// 多参数动作（`rename` / `cpmv` / `echo` / `md5sum` 等）不在此处理，
+/// 多参数动作（`rename` / `cpmv` / `echo` / `chtimes` 等）不在此处理，
 /// 引导用户走 `nascli call` 显式指定字段。
 pub fn build_message(
     schema: &Schema,
@@ -145,19 +146,26 @@ pub fn build_message(
     let req_type = schema
         .request_type(method)
         .ok_or_else(|| format!("schema 中找不到 {method} 的请求类型"))?;
+    // 哈希类请求把路径字段命名为 `paths`（单数语义），其余动作是 `path`。
+    let path_field = match action {
+        "md5sum" | "sha256sum" => "paths",
+        _ => "path",
+    };
     let path_no = schema
-        .field_no(&req_type, "path")
-        .ok_or_else(|| format!("{req_type} 中没有字段 path"))?;
+        .field_no(&req_type, path_field)
+        .ok_or_else(|| format!("{req_type} 中没有字段 {path_field}"))?;
 
     let mut m: Message = BTreeMap::new();
     m.insert(path_no, vec![Value::Bytes(path.as_bytes().to_vec())]);
 
     // `del` 必须显式发送 forever=false：若服务端把该字段声明为 optional bool
     // 并在缺省时按 true 处理，省略会导致永久删除，与「默认移入回收站」的承诺不符。
+    // 因此查不到 forever 字段时必须 fail-closed，不能静默省略。
     if action == "del" {
-        if let Some(no) = schema.field_no(&req_type, "forever") {
-            m.insert(no, vec![Value::Varint(0)]);
-        }
+        let no = schema.field_no(&req_type, "forever").ok_or_else(|| {
+            format!("{req_type} 缺少 forever 字段，无法保证移入回收站；已拒绝执行")
+        })?;
+        m.insert(no, vec![Value::Varint(0)]);
     }
 
     // 分页只对 `ls` 有意义；其余动作忽略 --page / --limit。

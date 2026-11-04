@@ -59,7 +59,7 @@ nascli/
 ├── .gitignore                 # spec/ 在此
 ├── src/
 │   ├── main.rs                # clap 分发
-│   ├── config.rs              # 环境变量、地址、TLS
+│   ├── config.rs              # TOML 配置、地址、TLS
 │   ├── wire.rs                # 通用 protobuf 编解码
 │   ├── schema.rs              # 加载内嵌 schema，字段号 ↔ 名字
 │   ├── client.rs              # HTTP POST + Bearer + 错误映射
@@ -114,15 +114,14 @@ clap 解析参数
 
 ```
 nascli fs stat   --path <p>
-nascli fs ls     --path <p> [--page N] [--limit N] [--root-type <t>]
-nascli fs find   --root-path <p> [--ext-names a,b] [--max-depth N]
-nascli fs du     --path <p>                    # 不支持，见 §9
+nascli fs ls     --path <p> [--page N] [--limit N]
+nascli fs find                                 # 不支持，见 §9
+nascli fs du     --path <p>                    # 大目录可能因流式限制退出 5
 nascli fs cat    --path <p>
-nascli fs md5sum --paths a,b
-nascli fs sha256sum --paths a,b
+nascli fs md5sum --path <p>
+nascli fs sha256sum --path <p>
 nascli fs getfattr --path <p>
 nascli fs recycle-status --path <p>
-nascli fs path-perm --path <p>
 nascli fs mkdir | touch | echo | rename | cpmv | del | restore | chtimes | modify-acl | share-mkdir
 ```
 
@@ -215,17 +214,32 @@ let no = schema.field_no(&req_type, "path")?;
 
 ## 6. 配置与安全
 
-### 6.1 配置（仅环境变量，无配置文件）
+### 6.1 配置（仅 TOML 文件）
 
 
-| 变量             | 默认       | 说明                                     |
-| ------------------ | ------------ | ------------------------------------------ |
-| `UGPOA_TOKEN`    | 无（必填） | 访问令牌                                 |
-| `UGNAS_HOST`     | 无（必填） | NAS 地址；支持 IP / DDNS / UGREENlink ID |
-| `UGNAS_PORT`     | `9443`     |                                          |
-| `UGNAS_INSECURE` | `1`        | 接受自签名证书；`0` 为严格校验           |
+CLI 只读取一个 TOML 文件，不再读取环境变量。默认路径为当前目录的
+`config.toml`，可用全局参数 `--config <path>` 指定其他路径。
 
-优先级：命令行参数 > 环境变量 > 默认值。
+
+| 字段       | 必填 | 默认   | 说明                                     |
+| ------------ | ------ | -------- | ------------------------------------------ |
+| `host`     | 是   | —     | NAS 地址；支持 IP / DDNS / UGREENlink ID |
+| `token`    | 是   | —     | 访问令牌                                 |
+| `port`     | 否   | `9443` | OpenCLI HTTPS 端口                       |
+| `insecure` | 否   | `true` | 接受自签名证书；`false` 为严格校验       |
+
+未知键会直接报错。配置优先级只有一层：`--config` 选择文件，文件内容即最终配置。
+
+首次运行需要配置的命令时，如果当前是交互式终端且文件不存在，CLI 自动进入初始化向导；
+非交互环境需先运行 `nascli config init`。修改入口：
+
+```bash
+nascli config init [--force]
+nascli config show
+nascli config set <host|port|token|insecure> [value]
+nascli config edit
+nascli config path
+```
 
 ### 6.2 安全模型
 
@@ -234,7 +248,7 @@ let no = schema.field_no(&req_type, "path")?;
 | ---------- | --------------------------------------------------------------- |
 | 读写分级 | `read` 直接执行；`write`/`delete`/`execute` 无 `--yes` 则拒绝 |
 | 令牌脱敏 | 日志与错误中令牌一律显示为 `ugpoa_v1.****`                    |
-| 不落盘   | 令牌只在内存，不写历史、不写临时文件                          |
+| 令牌存储 | `config.toml` 明文保存；按当前方案不额外做加密/权限校验      |
 | 只读发现 | `nascli list --read-only` 列出可安全使用的方法                |
 
 拒绝时的输出：
@@ -254,7 +268,7 @@ error: 该操作会修改 NAS 状态，已被拒绝
 | 位置                   | 要求                                                           |
 | ------------------------ | ---------------------------------------------------------------- |
 | README 示例            | 使用 `nas.example.com` 占位                                    |
-| `extract_schema.py`    | 通过 `--host` / `$UGNAS_HOST` 传入，无默认值                   |
+| `extract_schema.py`    | 通过 `--host` 传入，无默认值                                  |
 | `tests/fixtures/*.bin` | **结构保留、值替换**：字段号/类型/嵌套不变，字符串内容换占位符 |
 | 代码注释               | 使用「目标 NAS」泛称，不提具体型号                             |
 
@@ -284,10 +298,10 @@ error: 该操作会修改 NAS 状态，已被拒绝
 {"ok": true, "method": "/storage.Storage/VolumeList", "data": { ... }}
 
 // 失败
-{"ok": false, "error": {"code": "ACCESS_DENIED", "message": "...", "grpc_code": 3}}
+{"ok": false, "error": {"code": "ACCESS_DENIED", "message": "...", "exit_code": 4}}
 ```
 
-`--format table|pretty` 只影响人类可读性，不改变 `--format json` 的机器契约。
+没有 `--format` 选项：stdout 始终是 JSON，人类可读信息只走 stderr。
 
 ---
 
@@ -297,10 +311,10 @@ error: 该操作会修改 NAS 状态，已被拒绝
 | 层级 | 内容                                          | 需要 NAS |
 | ------ | ----------------------------------------------- | ---------- |
 | 单元 | 编解码往返、schema 解析、参数映射、错误码映射 | ❌       |
-| 快照 | 每个命令的请求字节 + 响应解码结果             | ❌       |
-| 集成 | 真实调用，`#[ignore]` 标记，手动触发          | ✅       |
+| 一致性 | 命令表 vs 内置 schema（方法名/套接字/读写属性） | ❌       |
+| 集成 | 真实调用，手动触发；当前不提交二进制 fixture   | ✅       |
 
-测试**不依赖 NAS 在线**。fixture 为脱敏后的真实响应。
+测试**不依赖 NAS 在线**；测试数据为内联合成的 protobuf 字节。
 
 ---
 
@@ -308,15 +322,15 @@ error: 该操作会修改 NAS 状态，已被拒绝
 
 ### 9.1 流式方法不可用
 
-OpenCLI 的 HTTP 代理只支持一元调用。以下方法为服务端流式，调用会返回
-`cardinality violation`（`X-Grpc-Code: 13`）：
+OpenCLI 的 HTTP 代理只支持一元调用。声明为服务端流式的方法在返回多条消息时会
+得到 `cardinality violation`（`X-Grpc-Code: 13`）：
 
 
-| 方法      | 影响      | 应对                                                 |
-| ----------- | ----------- | ------------------------------------------------------ |
-| `Readdir` | `fs ls`   | 改用一元的 `CategoryOrFileDirList`                   |
-| `Find`    | `fs find` | 尝试 `Find` + `GetFindResult` 组合；不通则标记不支持 |
-| `Du`      | `fs du`   | **标记不支持**，`--help` 中说明原因                  |
+| 方法      | 影响      | 应对                                                         |
+| ----------- | ----------- | -------------------------------------------------------------- |
+| `Readdir` | `fs ls`   | 改用一元的 `CategoryOrFileDirList`                           |
+| `Find`    | `fs find` | 本地拒绝，退出码 5                                           |
+| `Du`      | `fs du`   | 实际调用 `Du`；大目录若触发流式限制，由 client 映射为退出码 5 |
 
 `nascli list` 明确标注哪些方法因流式不可用，避免智能体反复试错。
 
@@ -347,7 +361,7 @@ CLI 侧无可做的判别，需上游补充字段。
 
 ## 10. 技能
 
-位置：`~/.claude/skills/nascli\`（项目级，非公开仓库，可含个人环境信息）。
+位置：项目级 `.claude/skills/nascli`（具体根目录由部署环境决定；非公开仓库，可含个人环境信息）。
 
 结构对齐现有 `nas-compose-intake`：
 
@@ -394,7 +408,7 @@ cargo install --path .
 NAS 升级固件
   → 重跑 extract_schema.py
   → cargo build（schema 变化会被重新嵌入）
-  → 跑快照测试，检查哪些方法的请求/响应结构变了
+  → 跑测试（含 schema 一致性），检查哪些方法的请求/响应结构变了
 ```
 
 ---
@@ -410,7 +424,7 @@ NAS 升级固件
 | 命令名对齐官方 CLI             | 降低学习成本，语义一致                       |
 | 保留 `call` 兜底               | 固件升级出现新方法时无需等 CLI 更新          |
 | 流式方法标记不支持             | HTTP 代理限制，硬啃成本高收益低              |
-| 令牌仅走环境变量               | 避免明文落盘                                 |
+| 配置只读 TOML 文件             | 用户要求单一配置文件，CLI 不再读取环境变量   |
 | 失败也输出 JSON 到 stdout      | 智能体统一解析 stdout                        |
 | 公开仓库完全通用化             | 便于开源，避免环境信息泄露                   |
 
@@ -427,7 +441,7 @@ nascli/                        # 公开仓库
 ├── docs/design.md
 └── README.md
 
-~/.claude/skills/nascli\ # 私有
+.claude/skills/nascli/        # 私有，具体根目录由部署环境决定
 ├── SKILL.md
 └── DECISIONS.md
 ```

@@ -16,6 +16,27 @@ fn access_denied_maps_to_4() {
 }
 
 #[test]
+fn http_403_maps_to_forbidden() {
+    let e = classify(403, None, r#"{"message":"forbidden"}"#);
+    assert_eq!(e.exit_code(), 4);
+    assert_eq!(e.code(), "ACCESS_DENIED");
+}
+
+#[test]
+fn grpc_permission_denied_maps_to_4_without_body_text() {
+    let e = classify(500, Some(7), "");
+    assert_eq!(e.exit_code(), 4);
+    assert_eq!(e.code(), "ACCESS_DENIED");
+}
+
+#[test]
+fn grpc_unauthenticated_maps_to_3() {
+    let e = classify(200, Some(16), "");
+    assert_eq!(e.exit_code(), 3);
+    assert_eq!(e.code(), "UNAUTHORIZED");
+}
+
+#[test]
 fn cardinality_violation_means_streaming_unsupported() {
     let e = classify(
         500,

@@ -14,7 +14,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 项目的核心价值不是「能调用」，而是**让 AI 智能体安全地调用**：默认只读、写操作需显式确认、令牌全程脱敏、JSON 输出可程序化解析。
 
-完整设计与决策记录见 `docs/design.md`，实现计划见 `docs/plans/`。
+完整设计与决策记录见 `docs/design.md`,实现计划见 `docs/plans/`。
+面向人/AI 的命令查询表见 `docs/CLI-QUERY.md`。
 
 ## 常用命令
 
@@ -37,6 +38,15 @@ cd tools && python -m pytest tests/test_extract.py -v
 
 # 生成 schema（需到 NAS 的 SSH 访问；只读）
 python tools/extract_schema.py --host <NAS 地址>
+
+# 配置（只读一个 TOML 文件；默认当前目录 config.toml）
+nascli config init              # 交互式创建；--force 覆盖
+nascli config edit              # 逐项修改
+nascli config set host <host>
+nascli config set port 9443
+nascli config set token         # 不带 value 时提示输入
+nascli config show              # token 脱敏
+nascli config path
 ```
 
 ## 架构：四层，数据单向流动
@@ -58,7 +68,7 @@ main.rs (clap)
 | ------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | `wire.rs`   | 通用 protobuf 编解码，不含任何业务语义                                   | `Value`、`Message`、`encode`、`decode`                                 |
 | `schema.rs` | 加载 `spec/schema.json`，字段号→名字、枚举→符号、嵌套消息递归展开      | `Schema::from_json_str`、`request_type`、`field_no`、`message_to_json` |
-| `config.rs` | 仅从环境变量读配置（无配置文件）；令牌脱敏                               | `Config::from_parts`/`from_env`、`redact`                              |
+| `config.rs` | 仅从 TOML 文件读配置；令牌脱敏                                           | `Config::from_file`、`redact`                                          |
 | `client.rs` | HTTP 传输 + 错误分类成稳定退出码                                         | `Client::call`、`classify`、`ApiError::exit_code`                      |
 | `commands/` | 每个子模块一个域（storage/system/docker/fs/apps/...）；命令表 + 参数映射 | `resolve(action)` 返回 `(socket, method, operation)`                   |
 
@@ -96,15 +106,19 @@ main.rs (clap)
 
 **请求发出前的失败**（退出码 2 的参数错误、5 的流式不支持）只写 stderr，stdout 为空——此时没有 API 响应可序列化。
 
-### 配置（仅环境变量，无配置文件）
+### 配置（仅 TOML 文件）
 
 
-| 变量             | 默认           | 说明                              |
-| ------------------ | ---------------- | ----------------------------------- |
-| `UGPOA_TOKEN`    | **无（必填）** | 缺失即报错退出                    |
-| `UGNAS_HOST`     | **无（必填）** | 仓库要公开，不内置任何个人环境    |
-| `UGNAS_PORT`     | `9443`         |                                   |
-| `UGNAS_INSECURE` | `1`            | 接受自签名证书；仅 `"0"` 表示关闭 |
+CLI 只读取一个 TOML 文件；默认当前目录的 `config.toml`，可用全局参数
+`--config <path>` 指定。没有环境变量兜底，也没有第二配置源。
+
+
+| 字段       | 默认   | 说明                              |
+| ------------ | -------- | ----------------------------------- |
+| `host`     | **必填** | 主机名或 IP，不带协议/路径/端口  |
+| `token`    | **必填** | 访问令牌                          |
+| `port`     | `9443` | OpenCLI HTTPS 端口                |
+| `insecure` | `true` | 接受自签名证书；`false` 为严格校验 |
 
 ### 令牌脱敏
 
@@ -112,9 +126,14 @@ main.rs (clap)
 
 ## 已知限制
 
-服务端为**流式**的方法（`Readdir`、`Find`、`Du`）不被 OpenCLI 的 HTTP 接口支持，调用返回 `cardinality violation`，CLI 映射为退出码 `5`。
+服务端为**流式**的方法（`Readdir`、`Find`、`Du`）在返回多条消息时会触发
+`cardinality violation`，CLI 映射为退出码 `5`。
 
-`fs ls` 因此改用**一元**的 `CategoryOrFileDirList`；`fs du` 与 `fs find` 直接报不支持。
+`fs ls` 因此改用**一元**的 `CategoryOrFileDirList`；`fs find` 直接报不支持；
+`fs du` 会实际调用 `Du`，只有大目录触发流式限制时才返回 `5`。
+
+上游权限表把少量会改状态的方法标成 `read`（搜索任务/查找任务类）。维护
+`FORCED_WRITE_METHODS` 时，必须同步更新 `list --read-only` 的过滤行为与测试。
 
 ## 仓库约定
 

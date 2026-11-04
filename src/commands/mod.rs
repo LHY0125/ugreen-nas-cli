@@ -47,6 +47,9 @@ pub fn parse_field(spec: &str) -> Result<(u32, Value), String> {
         .split_once(':')
         .ok_or_else(|| format!("字段格式应为 <编号>:<类型>=<值>，收到：{spec}"))?;
     let no: u32 = no.parse().map_err(|_| format!("字段编号不是数字：{no}"))?;
+    if no == 0 || no > 536_870_911 {
+        return Err(format!("字段编号必须在 1..=536870911 之间，收到：{no}"));
+    }
     let v = match kind {
         "string" => Value::Bytes(value.as_bytes().to_vec()),
         "int" => Value::Varint(
@@ -64,12 +67,35 @@ pub fn parse_field(spec: &str) -> Result<(u32, Value), String> {
     Ok((no, v))
 }
 
+/// 上游权限表把少数会改状态的方法标成了 `read`。
+///
+/// 这些方法必须在本机强制按写处理，否则 `call` 会绕过 `--yes` 闸门，
+/// `list --read-only` 也会把它们当成安全命令推荐给智能体。
+pub const FORCED_WRITE_METHODS: &[&str] = &[
+    "/search.Search/CancelTitleTask",
+    "/search.Search/CreateTitleStreamTask",
+    "/search.Search/RemoveTitleTask",
+    "/ugidl.filesystem.Filesystem/DeleteFindTask",
+    "/filemgr.Filemgr/DownloadFile",
+];
+
+/// 该方法是否被本地强制归类为写操作。
+pub fn is_forced_write(method: &str) -> bool {
+    FORCED_WRITE_METHODS.contains(&method)
+}
+
 /// 查方法的 operation，**未知方法一律按 `write` 处理**。
 ///
 /// `call` 的兜底场景正是「固件升级出现了新方法」——此时读写属性不可知。
 /// fail-open 会绕过 `--yes` 闸门，因此这里选择 fail-closed：宁可多确认一次，
 /// 也不能把未知的写操作当只读放行。
+///
+/// 另外，上游权限表存在把删除/创建任务类方法标成 `read` 的情况，
+/// 这些方法由 [`FORCED_WRITE_METHODS`] 覆盖为 `write`。
 pub fn operation_of<'a>(schema: &'a Schema, method: &str) -> &'a str {
+    if is_forced_write(method) {
+        return "write";
+    }
     schema
         .method(method)
         .map(|i| i.operation.as_str())

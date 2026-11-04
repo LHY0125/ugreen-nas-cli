@@ -1,5 +1,9 @@
 # nascli 实现计划
 
+> **2026-11-04 变更**：配置方案已改为“只读一个 TOML 文件”，不再使用环境变量；
+> 本文中的 `UGNAS_*` / `UGPOA_TOKEN` 描述是当时的实现记录，当前行为以
+> `docs/design.md` 与 `docs/CLI-QUERY.md` 为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把绿联 UGOS Pro 的 OpenCLI 访问令牌接口封装成一个默认只读、可安全交给 AI 智能体使用的 Rust CLI，并配一个 Claude Code 技能。

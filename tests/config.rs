@@ -1,4 +1,6 @@
-use nascli::config::{redact, Config, ConfigError};
+use nascli::config::{default_config_path, redact, Config, ConfigError, DEFAULT_CONFIG_FILE};
+use std::io::Write;
+use tempfile::{tempdir, NamedTempFile};
 
 fn cfg(host: &str, token: &str) -> Config {
     Config {
@@ -7,6 +9,60 @@ fn cfg(host: &str, token: &str) -> Config {
         token: token.into(),
         insecure: true,
     }
+}
+
+fn parse(text: &str) -> Result<Config, ConfigError> {
+    let mut file = NamedTempFile::new().unwrap();
+    file.write_all(text.as_bytes()).unwrap();
+    file.flush().unwrap();
+    Config::from_file(file.path())
+}
+
+#[test]
+fn default_path_is_config_toml() {
+    assert_eq!(DEFAULT_CONFIG_FILE, "config.toml");
+    assert_eq!(default_config_path().to_str(), Some("config.toml"));
+}
+
+#[test]
+fn write_file_roundtrips() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("nested/config.toml");
+    let mut c = cfg("nas.example.com", "ugpoa_v1.abcdef.secret");
+    c.port = 9444;
+    c.insecure = false;
+    c.write_file(&path).unwrap();
+
+    let read = Config::from_file(&path).unwrap();
+    assert_eq!(read.host, "nas.example.com");
+    assert_eq!(read.port, 9444);
+    assert_eq!(read.token, "ugpoa_v1.abcdef.secret");
+    assert!(!read.insecure);
+}
+
+#[test]
+fn redacted_toml_hides_token() {
+    let c = cfg("nas.example.com", "ugpoa_v1.abcdef.secretsecret");
+    let shown = c.redacted_toml();
+    assert!(shown.contains("ugpoa_v1.****"), "{shown}");
+    assert!(!shown.contains("secretsecret"), "{shown}");
+}
+
+#[test]
+fn set_field_updates_and_validates() {
+    let mut c = cfg("nas.example.com", "tok");
+    c.set_field("port", "9444").unwrap();
+    c.set_field("insecure", "false").unwrap();
+    c.set_field("host", "nas2.example.com").unwrap();
+    c.set_field("token", "tok2").unwrap();
+    assert_eq!(c.port, 9444);
+    assert!(!c.insecure);
+    assert_eq!(c.host, "nas2.example.com");
+    assert_eq!(c.token, "tok2");
+
+    assert!(c.set_field("nope", "x").is_err());
+    assert!(c.set_field("port", "0").is_err());
+    assert!(c.set_field("host", "https://bad.example.com").is_err());
 }
 
 #[test]
@@ -25,7 +81,6 @@ fn redacts_token() {
 
 #[test]
 fn redacts_non_standard_token_entirely() {
-    // 非 ugpoa 前缀时不得回显首段明文。
     assert_eq!(redact("a.b.c"), "****");
     assert_eq!(redact("trailing."), "****");
 }
@@ -42,64 +97,170 @@ fn debug_output_never_leaks_token() {
 }
 
 #[test]
-fn missing_host_is_an_error() {
-    let e = Config::from_parts(None, None, None, None).unwrap_err();
-    assert!(matches!(e, ConfigError::MissingHost));
-}
-
-#[test]
-fn missing_token_is_an_error() {
-    let e = Config::from_parts(Some("nas.example.com".into()), None, None, None).unwrap_err();
-    assert!(matches!(e, ConfigError::MissingToken));
-}
-
-#[test]
-fn defaults_port_and_insecure() {
-    let c = Config::from_parts(
-        Some("nas.example.com".into()),
-        Some("tok".into()),
-        None,
-        None,
+fn reads_valid_toml_with_defaults() {
+    let c = parse(
+        r#"
+host = "nas.example.com"
+token = "tok"
+"#,
     )
     .unwrap();
+    assert_eq!(c.host, "nas.example.com");
     assert_eq!(c.port, 9443);
+    assert_eq!(c.token, "tok");
     assert!(c.insecure);
 }
 
 #[test]
 fn insecure_can_be_disabled() {
-    let c = Config::from_parts(Some("h".into()), Some("t".into()), None, Some("0".into())).unwrap();
+    let c = parse(
+        r#"
+host = "nas.example.com"
+token = "tok"
+insecure = false
+"#,
+    )
+    .unwrap();
     assert!(!c.insecure);
 }
 
 #[test]
-fn bad_port_is_an_error() {
-    let e = Config::from_parts(Some("h".into()), Some("t".into()), Some("abc".into()), None)
+fn trims_host_and_token() {
+    let c = parse(
+        r#"
+host = "  nas.example.com  "
+token = "  tok  "
+"#,
+    )
+    .unwrap();
+    assert_eq!(c.host, "nas.example.com");
+    assert_eq!(c.token, "tok");
+}
+
+#[test]
+fn missing_file_is_a_read_error() {
+    let path = std::path::Path::new("definitely-not-a-real-config.toml");
+    let e = Config::from_file(path).unwrap_err();
+    assert!(matches!(e, ConfigError::Read { .. }), "{e:?}");
+    assert!(e.to_string().contains("config.toml"), "{e}");
+}
+
+#[test]
+fn missing_host_is_rejected() {
+    let e = parse(r#"token = "tok""#).unwrap_err();
+    assert!(matches!(e, ConfigError::Parse { .. }), "{e:?}");
+}
+
+#[test]
+fn missing_token_is_rejected() {
+    let e = parse(r#"host = "h""#).unwrap_err();
+    assert!(matches!(e, ConfigError::Parse { .. }), "{e:?}");
+}
+
+#[test]
+fn blank_host_is_rejected() {
+    let e = parse(
+        r#"
+host = "   "
+token = "tok"
+"#,
+    )
+    .unwrap_err();
+    assert!(matches!(e, ConfigError::MissingHost), "{e:?}");
+}
+
+#[test]
+fn blank_token_is_rejected() {
+    let e = parse(
+        r#"
+host = "h"
+token = "   "
+"#,
+    )
+    .unwrap_err();
+    assert!(matches!(e, ConfigError::MissingToken), "{e:?}");
+}
+
+#[test]
+fn unknown_key_is_rejected() {
+    let e = parse(
+        r#"
+host = "h"
+token = "t"
+typo = true
+"#,
+    )
+    .unwrap_err();
+    assert!(matches!(e, ConfigError::Parse { .. }), "{e:?}");
+    assert!(e.to_string().contains("typo"), "{e}");
+}
+
+#[test]
+fn rejects_scheme_or_path_in_host() {
+    for host in ["https://nas.example.com", "nas.example.com/path"] {
+        let e = parse(&format!(
+            r#"
+host = "{host}"
+token = "t"
+"#
+        ))
         .unwrap_err();
-    assert!(matches!(e, ConfigError::BadPort(_)));
+        assert!(
+            matches!(e, ConfigError::BadHost(_)),
+            "host={host}, err={e:?}"
+        );
+    }
 }
 
 #[test]
-fn blank_host_is_an_error() {
-    let e = Config::from_parts(Some("   ".into()), Some("t".into()), None, None).unwrap_err();
-    assert!(matches!(e, ConfigError::MissingHost));
+fn brackets_ipv6_host() {
+    let c = parse(
+        r#"
+host = "::1"
+token = "t"
+"#,
+    )
+    .unwrap();
+    assert_eq!(c.base_url(), "https://[::1]:9443");
 }
 
 #[test]
-fn blank_token_is_an_error() {
-    let e = Config::from_parts(Some("h".into()), Some("   ".into()), None, None).unwrap_err();
-    assert!(matches!(e, ConfigError::MissingToken));
+fn rejects_zero_port() {
+    let e = parse(
+        r#"
+host = "h"
+token = "t"
+port = 0
+"#,
+    )
+    .unwrap_err();
+    assert!(matches!(e, ConfigError::BadPort(_)), "{e:?}");
 }
 
 #[test]
-fn error_messages_mention_the_right_variable() {
-    let missing_host = ConfigError::MissingHost.to_string();
-    assert!(missing_host.contains("UGNAS_HOST"), "{missing_host}");
+fn bad_port_type_is_rejected() {
+    let e = parse(
+        r#"
+host = "h"
+token = "t"
+port = "abc"
+"#,
+    )
+    .unwrap_err();
+    assert!(matches!(e, ConfigError::Parse { .. }), "{e:?}");
+}
 
-    let missing_token = ConfigError::MissingToken.to_string();
-    assert!(missing_token.contains("UGPOA_TOKEN"), "{missing_token}");
-
-    let bad_port = ConfigError::BadPort("abc".to_string()).to_string();
-    assert!(bad_port.contains("UGNAS_PORT"), "{bad_port}");
-    assert!(bad_port.contains("abc"), "{bad_port}");
+#[test]
+fn error_messages_mention_the_right_field() {
+    assert!(ConfigError::MissingHost.to_string().contains("host"));
+    assert!(ConfigError::MissingToken.to_string().contains("token"));
+    assert!(ConfigError::BadPort("0".into())
+        .to_string()
+        .contains("port"));
+    assert!(ConfigError::Read {
+        path: "config.toml".into(),
+        error: "not found".into()
+    }
+    .to_string()
+    .contains("config.toml"));
 }

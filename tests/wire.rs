@@ -1,4 +1,4 @@
-use nascli::wire::{decode, encode, read_varint_at, Message, Value};
+use nascli::wire::{decode, decode_strict, encode, read_varint_at, Message, Value};
 use std::collections::BTreeMap;
 
 fn msg(pairs: &[(u32, Value)]) -> Message {
@@ -100,6 +100,22 @@ fn read_varint_at_returns_value_and_next_offset() {
     assert_eq!(read_varint_at(&[0x96], 0), None);
     // 起点越界
     assert_eq!(read_varint_at(&[0x96, 0x01], 2), None);
+}
+
+#[test]
+fn strict_decode_accepts_valid_message() {
+    let m = msg(&[(3, Value::Bytes(b"/volume1/demo".to_vec()))]);
+    assert_eq!(decode_strict(&encode(&m)).unwrap(), m);
+}
+
+#[test]
+fn strict_decode_rejects_truncated_length() {
+    assert!(decode_strict(&[0x0a, 0x05, 0x01]).is_err());
+}
+
+#[test]
+fn strict_decode_rejects_field_zero() {
+    assert!(decode_strict(&[0x00]).is_err());
 }
 
 #[test]

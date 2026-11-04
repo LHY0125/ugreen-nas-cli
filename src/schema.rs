@@ -235,20 +235,16 @@ impl Schema {
                 }
                 json!(*v)
             }
-            Value::Fixed64(v) => {
-                if def.map(|d| d.kind == "double").unwrap_or(false) {
-                    json!(f64::from_bits(*v))
-                } else {
-                    json!(v)
-                }
-            }
-            Value::Fixed32(v) => {
-                if def.map(|d| d.kind == "float").unwrap_or(false) {
-                    json!(f32::from_bits(*v))
-                } else {
-                    json!(v)
-                }
-            }
+            Value::Fixed64(v) => match def.map(|d| d.kind.as_str()) {
+                Some("double") => json!(f64::from_bits(*v)),
+                Some("sfixed64") => json!(*v as i64),
+                _ => json!(v),
+            },
+            Value::Fixed32(v) => match def.map(|d| d.kind.as_str()) {
+                Some("float") => json!(f32::from_bits(*v)),
+                Some("sfixed32") => json!(*v as i32),
+                _ => json!(v),
+            },
             Value::Bytes(b) => {
                 if let Some(tn) = def.and_then(|d| d.type_name.clone()) {
                     if self.messages.contains_key(&tn) {

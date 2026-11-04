@@ -1,6 +1,10 @@
 use crate::config::{redact, Config};
-use crate::wire::{decode, encode, Message};
+use crate::wire::{decode_strict, encode, Message};
+use std::io::Read;
 use std::time::Duration;
+
+/// 单次响应的硬上限，避免异常服务端把内存打满。
+const MAX_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// 一次 OpenCLI 调用的失败分类。
 ///
@@ -107,6 +111,12 @@ pub fn classify(status: u16, grpc_code: Option<i64>, body: &str) -> ApiError {
     if status == 401 {
         return ApiError::Unauthorized;
     }
+    if status == 403 || grpc_code == Some(7) {
+        return ApiError::Forbidden(msg);
+    }
+    if grpc_code == Some(16) {
+        return ApiError::Unauthorized;
+    }
     if msg.contains("cardinality violation") {
         return ApiError::Unsupported(
             "该方法为服务端流式 RPC，OpenCLI 的 HTTP 接口不支持".to_string(),
@@ -143,6 +153,12 @@ pub struct Client {
 
 impl Client {
     pub fn new(cfg: Config) -> Result<Self, String> {
+        if cfg.insecure {
+            eprintln!(
+                "警告：已关闭 TLS 证书校验（配置项 insecure = true），令牌可能被中间人截获；\
+                 如 NAS 证书可信，请在 config.toml 设置 insecure = false"
+            );
+        }
         let http = reqwest::blocking::Client::builder()
             .danger_accept_invalid_certs(cfg.insecure)
             .timeout(Duration::from_secs(30))
@@ -176,10 +192,27 @@ impl Client {
             .get("x-grpc-code")
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<i64>().ok());
-        let bytes = resp.bytes().map_err(|e| ApiError::Network(e.to_string()))?;
+        if let Some(len) = resp.content_length() {
+            if len > MAX_RESPONSE_BYTES {
+                return Err(ApiError::Server(format!(
+                    "响应体 {len} 字节，超过 {MAX_RESPONSE_BYTES} 字节上限"
+                )));
+            }
+        }
+        // 用 take 限制实际读取量，chunked 响应也不会先分配完整 body。
+        let mut bytes = Vec::new();
+        resp.take(MAX_RESPONSE_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|e| ApiError::Network(e.to_string()))?;
+        if bytes.len() as u64 > MAX_RESPONSE_BYTES {
+            return Err(ApiError::Server(format!(
+                "响应体超过 {MAX_RESPONSE_BYTES} 字节上限"
+            )));
+        }
 
         if status == 200 && grpc_code == Some(0) {
-            return Ok(decode(&bytes));
+            return decode_strict(&bytes)
+                .map_err(|e| ApiError::Server(format!("响应 protobuf 解析失败：{e}")));
         }
         let body = String::from_utf8_lossy(&bytes).to_string();
         // 输出侧兜底脱敏：服务端若回显 Authorization 头，明文令牌不得进入错误信息。

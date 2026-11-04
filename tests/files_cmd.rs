@@ -17,6 +17,15 @@ const SAMPLE: &str = r#"{
     "ugidl.filesystem.cli.DelPathRequest": [
       {"no": 1, "name": "forever", "type": "bool"},
       {"no": 2, "name": "path", "type": "string"}
+    ],
+    "ugidl.filesystem.cli.DelPathRequestNoForever": [
+      {"no": 2, "name": "path", "type": "string"}
+    ],
+    "ugidl.filesystem.cli.DuRequest": [
+      {"no": 1, "name": "path", "type": "string"}
+    ],
+    "ugidl.filesystem.cli.Md5SumRequest": [
+      {"no": 1, "name": "paths", "type": "string"}
     ]
   },
   "enums": {},
@@ -24,7 +33,10 @@ const SAMPLE: &str = r#"{
     "ugidl.filesystem.Filesystem": {
       "CategoryOrFileDirList": {"in": "ugidl.filesystem.cli.FileDirListRequest", "out": "x", "server_streaming": false},
       "Stat": {"in": "ugidl.filesystem.cli.StatRequest", "out": "x", "server_streaming": false},
-      "DelPath": {"in": "ugidl.filesystem.cli.DelPathRequest", "out": "x", "server_streaming": false}
+      "DelPath": {"in": "ugidl.filesystem.cli.DelPathRequest", "out": "x", "server_streaming": false},
+      "DelPathNoForever": {"in": "ugidl.filesystem.cli.DelPathRequestNoForever", "out": "x", "server_streaming": false},
+      "Du": {"in": "ugidl.filesystem.cli.DuRequest", "out": "x", "server_streaming": true},
+      "Md5sum": {"in": "ugidl.filesystem.cli.Md5SumRequest", "out": "x", "server_streaming": false}
     }
   },
   "methods": {}
@@ -74,9 +86,21 @@ fn multi_param_action_is_rejected() {
 }
 
 #[test]
-fn du_is_reported_unsupported() {
-    let e = resolve("du").unwrap_err();
-    assert!(e.contains("流式"));
+fn du_uses_the_real_unary_method() {
+    let (_, method, op) = resolve("du").unwrap();
+    assert_eq!(method, "/ugidl.filesystem.Filesystem/Du");
+    assert_eq!(op, "read");
+}
+
+#[test]
+fn du_resolves_path_field_from_schema() {
+    let s = schema();
+    let (_, method, _) = resolve("du").unwrap();
+    let m = build_message(&s, method, "du", "/volume1/demo", None, None).unwrap();
+    assert_eq!(
+        m.get(&1),
+        Some(&vec![Value::Bytes(b"/volume1/demo".to_vec())])
+    );
 }
 
 #[test]
@@ -101,10 +125,10 @@ fn rejects_unknown_action() {
 /// 5 表示「方法不支持」，2 表示「参数错误」。混用会让智能体错误归因。
 #[test]
 fn streaming_actions_map_to_exit_code_5() {
-    for action in ["du", "find"] {
-        assert!(is_streaming_unsupported(action), "action={action}");
-        assert_eq!(resolve_error_exit_code(action), 5, "action={action}");
-    }
+    // du 现在真实调用，大目录的流式失败由 client 映射为 5；find 仍在本地拒绝。
+    assert!(!is_streaming_unsupported("du"));
+    assert!(is_streaming_unsupported("find"));
+    assert_eq!(resolve_error_exit_code("find"), 5);
 }
 
 #[test]
@@ -167,6 +191,27 @@ fn non_empty_path_passes_target_gate() {
 }
 
 #[test]
+fn md5sum_uses_paths_field() {
+    let s = schema();
+    let (_, method, op) = resolve("md5sum").unwrap();
+    assert_eq!(op, "read");
+    let m = build_message(&s, method, "md5sum", "/volume1/demo/x", None, None).unwrap();
+    assert_eq!(
+        m.get(&1),
+        Some(&vec![Value::Bytes(b"/volume1/demo/x".to_vec())])
+    );
+}
+
+#[test]
+fn del_without_forever_field_fails_closed() {
+    let s = schema();
+    let method = "/ugidl.filesystem.Filesystem/DelPathNoForever";
+    let e = build_message(&s, method, "del", "/volume1/demo/x", None, None).unwrap_err();
+    assert!(e.contains("forever"), "{e}");
+    assert!(e.contains("回收站"), "{e}");
+}
+
+#[test]
 fn del_explicitly_sends_forever_false() {
     let s = schema();
     let (_, method, _) = resolve("del").unwrap();
@@ -177,5 +222,8 @@ fn del_explicitly_sends_forever_false() {
         Some(&vec![Value::Varint(0)]),
         "del 必须显式发送 forever=0（移入回收站），实际: {m:?}"
     );
-    assert_eq!(m.get(&2), Some(&vec![Value::Bytes(b"/volume1/demo/x".to_vec())]));
+    assert_eq!(
+        m.get(&2),
+        Some(&vec![Value::Bytes(b"/volume1/demo/x".to_vec())])
+    );
 }

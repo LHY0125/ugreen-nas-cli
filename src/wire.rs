@@ -83,33 +83,34 @@ fn read_varint(raw: &[u8], i: &mut usize) -> Option<u64> {
     }
 }
 
-pub fn decode(raw: &[u8]) -> Message {
+fn decode_inner(raw: &[u8]) -> (Message, Option<String>) {
     let mut out = Message::new();
     let mut i = 0usize;
     while i < raw.len() {
         let Some(key) = read_varint(raw, &mut i) else {
-            break;
+            return (out, Some("varint 键截断".to_string()));
         };
-        let field = (key >> 3) as u32;
-        let wire = (key & 7) as u8;
-        if field == 0 {
-            break;
+        let field_no = key >> 3;
+        if field_no == 0 || field_no > 536_870_911 {
+            return (out, Some(format!("字段号越界：{field_no}")));
         }
+        let field = field_no as u32;
+        let wire = (key & 7) as u8;
         let value = match wire {
             0 => match read_varint(raw, &mut i) {
                 Some(v) => Value::Varint(v),
-                None => break,
+                None => return (out, Some("varint 值截断".to_string())),
             },
             2 => {
                 let Some(len) = read_varint(raw, &mut i) else {
-                    break;
+                    return (out, Some("length 前缀截断".to_string()));
                 };
                 let len = len as usize;
                 // 用减法而非 `i + len` 比较：`len` 可达 u64::MAX，相加会溢出
                 // （debug 报 overflow panic，release 回绕后切片越界 panic）。
                 // `i` 恒 <= raw.len()，故 raw.len() - i 不会下溢。
                 if len > raw.len() - i {
-                    break;
+                    return (out, Some("length 越界".to_string()));
                 }
                 let v = raw[i..i + len].to_vec();
                 i += len;
@@ -117,7 +118,7 @@ pub fn decode(raw: &[u8]) -> Message {
             }
             5 => {
                 if i + 4 > raw.len() {
-                    break;
+                    return (out, Some("fixed32 截断".to_string()));
                 }
                 let v = u32::from_le_bytes(raw[i..i + 4].try_into().unwrap());
                 i += 4;
@@ -125,16 +126,33 @@ pub fn decode(raw: &[u8]) -> Message {
             }
             1 => {
                 if i + 8 > raw.len() {
-                    break;
+                    return (out, Some("fixed64 截断".to_string()));
                 }
                 let v = u64::from_le_bytes(raw[i..i + 8].try_into().unwrap());
                 i += 8;
                 Value::Fixed64(v)
             }
-            _ => break,
+            other => return (out, Some(format!("不支持的 wire type：{other}"))),
         };
         // 同号字段追加而非覆盖：repeated 字段的每个元素都必须保留。
         out.entry(field).or_default().push(value);
     }
-    out
+    (out, None)
+}
+
+/// 宽松解码：遇到畸形数据时保留已解析的部分。
+///
+/// 用于嵌套消息的 JSON 展示（schema 层没有错误通道）；网络响应必须用
+/// [`decode_strict`]，否则截断响应会被误报为成功。
+pub fn decode(raw: &[u8]) -> Message {
+    decode_inner(raw).0
+}
+
+/// 严格解码：任何截断/越界/非法 wire type 都返回错误。
+pub fn decode_strict(raw: &[u8]) -> Result<Message, String> {
+    let (msg, err) = decode_inner(raw);
+    match err {
+        Some(e) => Err(e),
+        None => Ok(msg),
+    }
 }

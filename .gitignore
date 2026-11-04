@@ -3,3 +3,5 @@
 /spec/openapi/
 __pycache__/
 .superpowers/
+
+/config.toml

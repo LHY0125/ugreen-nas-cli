@@ -376,10 +376,13 @@ fn schema_without_repeated_key_still_loads() {
 
 #[test]
 fn negative_int32_renders_as_signed() {
-    let s = Schema::from_json_str(r#"{
+    let s = Schema::from_json_str(
+        r#"{
       "messages": { "demo.T": [ {"no": 1, "name": "temperature", "type": "int32"} ] },
       "enums": {}, "services": {}, "methods": {}
-    }"#).unwrap();
+    }"#,
+    )
+    .unwrap();
     let mut m = Message::new();
     // -1 在 protobuf 中编码为 10 字节 varint，解码后是 u64::MAX
     m.insert(1, vec![Value::Varint(u64::MAX)]);
@@ -387,11 +390,34 @@ fn negative_int32_renders_as_signed() {
 }
 
 #[test]
+fn sfixed_fields_render_as_signed() {
+    let s = Schema::from_json_str(
+        r#"{
+      "messages": { "demo.T": [
+        {"no": 1, "name": "a", "type": "sfixed32"},
+        {"no": 2, "name": "b", "type": "sfixed64"}
+      ] },
+      "enums": {}, "services": {}, "methods": {}
+    }"#,
+    )
+    .unwrap();
+    let mut m = Message::new();
+    m.insert(1, vec![Value::Fixed32(u32::MAX)]);
+    m.insert(2, vec![Value::Fixed64(u64::MAX)]);
+    let j = s.message_to_json("demo.T", &m);
+    assert_eq!(j["a"], -1);
+    assert_eq!(j["b"], -1);
+}
+
+#[test]
 fn sint32_zigzag_decodes_correctly() {
-    let s = Schema::from_json_str(r#"{
+    let s = Schema::from_json_str(
+        r#"{
       "messages": { "demo.T": [ {"no": 1, "name": "v", "type": "sint32"} ] },
       "enums": {}, "services": {}, "methods": {}
-    }"#).unwrap();
+    }"#,
+    )
+    .unwrap();
     let mut m = Message::new();
     // zigzag: -1 → 1, 1 → 2
     m.insert(1, vec![Value::Varint(1)]);
