@@ -1,53 +1,53 @@
 use nascli::commands::system::{resolve_network, resolve_system};
 
+/// 套接字字面量：`system.rs` 里的常量是私有的，测试侧直接写字面量，
+/// 顺便锁死套接字名本身（改错同样会红）。
+const TASK: &str = "ugreen.taskmgr.internal.grpc";
+const CTL: &str = "ugreen.ctlserv.internal.grpc";
+
 #[test]
-fn maps_system_actions() {
-    assert_eq!(
-        resolve_system("cpu").unwrap(),
-        (
-            "ugreen.taskmgr.internal.grpc",
-            "/taskserv.TaskManage/GetCpuMetric"
-        )
-    );
-    assert_eq!(
-        resolve_system("identity").unwrap(),
-        (
-            "ugreen.ctlserv.internal.grpc",
-            "/ctlserv.Internal/GetOsIdentity"
-        )
-    );
-    assert_eq!(
-        resolve_system("ups").unwrap(),
-        (
-            "ugreen.ctlserv.internal.grpc",
-            "/ctlserv.Internal/GetUpsConfig"
-        )
-    );
-    assert_eq!(
-        resolve_system("fan").unwrap(),
-        (
-            "ugreen.ctlserv.internal.grpc",
-            "/ctlserv.Hardware/GetFanConfig"
-        )
-    );
+fn every_system_action_maps_to_expected_method() {
+    let cases = [
+        ("identity", CTL, "/ctlserv.Internal/GetOsIdentity"),
+        ("update-status", CTL, "/ctlserv.Internal/GetOsUpdateStatus"),
+        ("cpu", TASK, "/taskserv.TaskManage/GetCpuMetric"),
+        ("mem", TASK, "/taskserv.TaskManage/GetMemMetric"),
+        ("net", TASK, "/taskserv.TaskManage/GetNetTraffic"),
+        ("disk", TASK, "/taskserv.TaskManage/GetDiskMetric"),
+        ("volume", TASK, "/taskserv.TaskManage/GetVolumeMetric"),
+        ("overview", TASK, "/taskserv.TaskManage/GetRunOverview"),
+        ("services", TASK, "/taskserv.TaskManage/GetServiceResource"),
+        ("processes", TASK, "/taskserv.TaskManage/GetProcessResource"),
+        ("ups", CTL, "/ctlserv.Internal/GetUpsConfig"),
+        ("power", CTL, "/ctlserv.Hardware/GetPowerConfig"),
+        ("fan", CTL, "/ctlserv.Hardware/GetFanConfig"),
+        ("led", CTL, "/ctlserv.Hardware/GetLedConfig"),
+        ("beep", CTL, "/ctlserv.Hardware/GetBeepConfig"),
+        ("cpu-config", CTL, "/ctlserv.Hardware/GetCpuConfig"),
+        ("zram", CTL, "/ctlserv.Hardware/GetZramConfig"),
+    ];
+    for (action, socket, method) in cases {
+        assert_eq!(
+            resolve_system(action).unwrap(),
+            (socket, method),
+            "action={action}"
+        );
+    }
 }
 
 #[test]
-fn maps_network_actions() {
-    assert_eq!(
-        resolve_network("general").unwrap(),
-        (
-            "ugreen.ctlserv.internal.grpc",
-            "/ctlserv.Network/GetGeneralConfig"
-        )
-    );
-    assert_eq!(
-        resolve_network("ifaces").unwrap(),
-        (
-            "ugreen.ctlserv.internal.grpc",
-            "/ctlserv.Network/GetIfaceList"
-        )
-    );
+fn every_network_action_maps_to_expected_method() {
+    let cases = [
+        ("general", CTL, "/ctlserv.Network/GetGeneralConfig"),
+        ("ifaces", CTL, "/ctlserv.Network/GetIfaceList"),
+    ];
+    for (action, socket, method) in cases {
+        assert_eq!(
+            resolve_network(action).unwrap(),
+            (socket, method),
+            "action={action}"
+        );
+    }
 }
 
 #[test]
