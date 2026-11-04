@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 常用命令
 
 ```bash
-# 构建（要求 spec/schema.json 存在，否则 build.rs 会中止并提示）
+# 构建（schema.json 已入库；build.rs 仅在其被误删时中止并提示）
 cargo build
 cargo build --release
 
@@ -39,7 +39,7 @@ cd tools && python -m pytest tests/test_extract.py -v
 # 生成 schema（需到 NAS 的 SSH 访问；只读）
 python tools/extract_schema.py --host <NAS 地址>
 
-# 配置（只读一个 TOML 文件；默认当前目录 config.toml）
+# 配置（只读一个 TOML 文件；路径决议见「配置（仅 TOML 文件）」节）
 nascli config init              # 交互式创建；--force 覆盖
 nascli config edit              # 逐项修改
 nascli config set host <host>
@@ -47,6 +47,8 @@ nascli config set port 9443
 nascli config set token         # 不带 value 时提示输入
 nascli config show              # token 脱敏
 nascli config path
+
+# 配置文件默认位于平台用户配置目录；仓库内开发时用 --config 或 UGNAS_CONFIG 指定
 ```
 
 ## 架构：四层，数据单向流动
@@ -74,7 +76,7 @@ main.rs (clap)
 
 ### schema 是构建期嵌入的
 
-`spec/schema.json` **不入库**（含上游接口契约，`.gitignore` 已排除）。`build.rs` 在它缺失时**让编译失败**并提示先跑提取器；`src/main.rs` 用 `include_str!` 嵌入。因此新克隆的仓库**必须先跑一次 `tools/extract_schema.py`** 才能编译。
+`spec/schema.json` **已入库**，clone 后即可直接编译；`build.rs` 只在它被误删时**让编译失败**并提示先跑提取器，`src/main.rs` 用 `include_str!` 嵌入。固件升级后重跑 `tools/extract_schema.py`，并将更新后的 schema 一并提交。
 
 ### 提取器为什么自己解析二进制
 
@@ -108,17 +110,17 @@ main.rs (clap)
 
 ### 配置（仅 TOML 文件）
 
+CLI 只读取一个 TOML 文件。路径决议顺序：`--config <path>` →
+环境变量 `UGNAS_CONFIG` → 平台用户配置目录（Windows 为
+`%APPDATA%\nascli\config.toml`）。当前目录的 `config.toml` **不会**被隐式读取。
 
-CLI 只读取一个 TOML 文件；默认当前目录的 `config.toml`，可用全局参数
-`--config <path>` 指定。没有环境变量兜底，也没有第二配置源。
 
-
-| 字段       | 默认   | 说明                              |
-| ------------ | -------- | ----------------------------------- |
-| `host`     | **必填** | 主机名或 IP，不带协议/路径/端口  |
-| `token`    | **必填** | 访问令牌                          |
-| `port`     | `9443` | OpenCLI HTTPS 端口                |
-| `insecure` | `true` | 接受自签名证书；`false` 为严格校验 |
+| 字段       | 默认     | 说明                               |
+| ------------ | ---------- | ------------------------------------ |
+| `host`     | **必填** | 主机名或 IP，不带协议/路径/端口    |
+| `token`    | **必填** | 访问令牌                           |
+| `port`     | `9443`   | OpenCLI HTTPS 端口                 |
+| `insecure` | `true`   | 接受自签名证书；`false` 为严格校验 |
 
 ### 令牌脱敏
 
@@ -140,5 +142,6 @@ CLI 只读取一个 TOML 文件；默认当前目录的 `config.toml`，可用�
 - 单 crate，`edition = "2021"`，不使用 workspace。
 - **git commit 信息用中文**，格式 `<类型>：<描述>`。
 - 不得提交任何真实环境信息（主机名、IP、序列号、用户名、邮箱、真实路径）。示例统一用 `nas.example.com` / `/volume1/demo`。
-- `spec/` 的产物与 `docs/NAS-UGOS-OpenCLI-API.md` 均不入库。
+- `spec/schema.json` **已入库**，是 CI 构建的必要输入，不要删除或加入 `.gitignore`。
+- `spec/openapi/`（提取器中间产物）与 `docs/NAS-UGOS-OpenCLI-API.md` 不入库。
 - 不使用 `tonic` / `prost`（避免 proto 构建链，代价是自实现编解码）。

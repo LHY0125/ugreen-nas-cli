@@ -20,29 +20,64 @@ UGOS Pro 的访问令牌背后是一套 **gRPC-over-HTTP** 接口（OpenCLI）�
 
 ## 环境要求
 
-- Rust 1.88+
-- Python 3.10+（仅生成 schema 时需要）
-- 到 NAS 的 SSH 访问（仅生成 schema 时需要）
+- 运行：无需额外依赖，单个可执行文件
+- 从源码构建：Rust 1.88+
+- 重新提取 schema（仅固件升级后需要）：Python 3.10+，且需要到 NAS 的 SSH 访问
 - NAS 上已创建访问令牌：**个人中心 → 本地账号 → 访问令牌**
 
 ## 安装
 
-`spec/schema.json` 含上游接口契约，**不入库**。新克隆的仓库必须先跑一次提取器生成它，否则 `build.rs` 会让编译直接失败。
+### Scoop（Windows 推荐）
+
+```powershell
+scoop bucket add lhy https://github.com/LHY0125/scoop-bucket
+scoop install nascli
+```
+
+### 从源码构建
+
+`schema.json` 已随仓库提供，clone 即可编译：
 
 ```bash
-# 1. 生成 schema（只读：通过 SSH 读取 NAS 上的官方二进制，不修改任何配置）
-python tools/extract_schema.py --host nas.example.com
-
-# 2. 构建并安装
+git clone https://github.com/LHY0125/ugreen-nas-cli.git
+cd ugreen-nas-cli
 cargo build --release
 cargo install --path .
 ```
 
-如果 SSH 用户名与 `~/.ssh/config` 中的不同，加 `--ssh-user <user>`。提取器需要 NAS 上有 `python3`。
+### 预编译二进制
+
+从 [Releases](https://github.com/LHY0125/ugreen-nas-cli/releases) 下载对应平台的文件：
+
+| 平台 | 文件 |
+| --- | --- |
+| Windows x64 | `nascli_<version>_x64.exe` |
+| Linux x64 | `nascli_<version>_linux_x64.tar.gz` |
+| macOS x64 | `nascli_<version>_macos_x64.tar.gz` |
 
 ## 配置
 
-CLI **只读取一个 TOML 文件**，不再读取环境变量。默认路径是当前目录的 `config.toml`，也可以用全局参数 `--config <path>` 指定其他文件。
+首次运行 `nascli config init` 会创建配置文件：
+
+| 平台 | 路径 |
+| --- | --- |
+| Windows | `%APPDATA%\nascli\config.toml` |
+| Linux | `$XDG_CONFIG_HOME/nascli/config.toml`，未设置则 `~/.config/nascli/config.toml` |
+| macOS | `~/Library/Application Support/nascli/config.toml` |
+
+### 覆盖路径
+
+优先级从高到低：
+
+```bash
+nascli --config /path/to/config.toml storage volumes   # 1. 显式参数
+UGNAS_CONFIG=/path/to/config.toml nascli storage volumes  # 2. 环境变量
+nascli storage volumes                                  # 3. 平台默认目录
+```
+
+当前目录的 `config.toml` **不会**被隐式读取；在仓库内开发时请用上面的参数或环境变量指定。
+
+### 字段
 
 ```toml
 host = "nas.example.com"   # 必填：主机名或 IP，不要带协议/路径/端口
@@ -68,9 +103,6 @@ nascli config set insecure false
 nascli config edit
 nascli config show               # token 自动脱敏
 nascli config path
-
-# 使用其他配置文件
-nascli --config /path/to/config.toml storage volumes
 ```
 
 首次直接运行需要配置的命令时，如果当前是交互式终端且配置文件不存在，CLI 会自动进入初始化向导；非交互环境（例如 AI 工具）请先执行 `nascli config init`。

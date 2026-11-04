@@ -55,8 +55,8 @@
 ```
 nascli/
 ├── Cargo.toml
-├── build.rs                   # 校验 spec/schema.json 存在
-├── .gitignore                 # spec/ 在此
+├── build.rs                   # 校验 spec/schema.json 存在（已入库）
+├── .gitignore                 # spec/openapi/ 等在此
 ├── src/
 │   ├── main.rs                # clap 分发
 │   ├── config.rs              # TOML 配置、地址、TLS
@@ -172,7 +172,7 @@ nascli call <socket-id> <method> [--field N:type=value]...
 }
 ```
 
-`spec/` 进 `.gitignore`；`build.rs` 找不到 `spec/schema.json` 时**编译失败**并提示先运行提取器。
+`spec/schema.json` **已入库**（随仓库提供当前固件的 schema），clone 后即可编译。`spec/openapi/` 是提取器的中间产物，仍在 `.gitignore` 中。`build.rs` 仅在 `spec/schema.json` 被误删时**编译失败**并提示先运行提取器。
 
 ### 5.2 编解码器
 
@@ -217,8 +217,11 @@ let no = schema.field_no(&req_type, "path")?;
 ### 6.1 配置（仅 TOML 文件）
 
 
-CLI 只读取一个 TOML 文件，不再读取环境变量。默认路径为当前目录的
-`config.toml`，可用全局参数 `--config <path>` 指定其他路径。
+CLI 只读取一个 TOML 文件。路径按三级决议：`--config <path>` → 环境变量
+`UGNAS_CONFIG` → 平台用户配置目录（Windows `%APPDATA%\nascli\config.toml`；
+Linux `$XDG_CONFIG_HOME/nascli/config.toml`，未设置则
+`~/.config/nascli/config.toml`；macOS `~/Library/Application Support/nascli/config.toml`）。
+当前目录的 `config.toml` 不再被隐式读取。
 
 
 | 字段       | 必填 | 默认   | 说明                                     |
@@ -395,9 +398,11 @@ nascli list --read-only
 ## 11. 构建与发布
 
 ```powershell
-python tools\extract_schema.py --host <NAS>   # 生成 spec/schema.json
 cargo build --release
 cargo install --path .
+
+# 仅固件升级后需要：重新生成 schema（产物已入库，需一并提交）
+python tools\extract_schema.py --host <NAS>
 ```
 
 `extract_schema.py` 通过 SSH 只读读取 NAS 上的官方 CLI 二进制，不修改任何配置。
@@ -420,11 +425,11 @@ NAS 升级固件
 | -------------------------------- | ---------------------------------------------- |
 | 用 Rust 单 crate               | 单二进制、无运行时依赖；规模不需要 workspace |
 | 通用编解码而非 prost 代码生成  | 101 个方法规模下，避免 proto 构建链的复杂度  |
-| `spec/` 不入库，编译期强制检查 | 不公开上游 schema；同时保证构建可复现        |
+| `spec/schema.json` 入库，构建期嵌入 | clone 即可构建，CI 无需访问 NAS；固件升级后重跑提取器并提交更新 |
 | 命令名对齐官方 CLI             | 降低学习成本，语义一致                       |
 | 保留 `call` 兜底               | 固件升级出现新方法时无需等 CLI 更新          |
 | 流式方法标记不支持             | HTTP 代理限制，硬啃成本高收益低              |
-| 配置只读 TOML 文件             | 用户要求单一配置文件，CLI 不再读取环境变量   |
+| 配置只读一个 TOML 文件         | 单一配置文件；路径按参数 / 环境变量 / 平台默认目录三级决议 |
 | 失败也输出 JSON 到 stdout      | 智能体统一解析 stdout                        |
 | 公开仓库完全通用化             | 便于开源，避免环境信息泄露                   |
 
