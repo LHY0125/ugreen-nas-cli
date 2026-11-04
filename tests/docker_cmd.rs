@@ -165,3 +165,35 @@ fn non_empty_request_passes_target_gate() {
     msg.insert(1, vec![Value::Bytes(b"demo".to_vec())]);
     assert!(require_target("stop", &msg).is_ok());
 }
+
+/// 示例字段类型必须与 schema 一致：只有 `port-check` 是 int，其余是 string。
+///
+/// 提示照抄即执行，类型写错会让用户拿到「不是合法整数」之类的参数错误。
+#[test]
+fn target_hint_uses_correct_field_type() {
+    let err = require_target("port-check", &empty()).unwrap_err();
+    assert!(
+        err.contains("--field 1:int=<端口号>"),
+        "port-check 的示例应为 int：{err}"
+    );
+
+    for action in [
+        "logs",
+        "dir-check",
+        "start",
+        "stop",
+        "restart",
+        "pull",
+        "compose-start",
+        "compose-stop",
+        "compose-restart",
+        "compose-delete",
+        "rebuild",
+    ] {
+        let err = require_target(action, &empty()).unwrap_err();
+        assert!(
+            err.contains("--field 1:string="),
+            "action={action} 的示例应为 string：{err}"
+        );
+    }
+}

@@ -12,26 +12,28 @@ use std::collections::BTreeMap;
 /// Docker 服务对应的套接字 ID。
 pub const SOCKET: &str = "ugreen.dockerserv.internal.grpc";
 
-/// 需要必填目标参数的动作。
+/// 需要必填目标参数的动作：`(动作, 字段类型, 占位说明)`。
 ///
 /// 当前版本尚未支持参数化，这些动作若发出空请求，目标缺失——写类动作可能造成
 /// 范围未限定的破坏（例如空 `project_name` 被服务端解释为「全部项目」），
 /// 只读动作也只会拿到服务端参数错误。因此一律在发请求前 fail-closed。
-pub const NEEDS_TARGET: &[&str] = &[
-    // 只读但需要 container_id / port / dir
-    "logs",
-    "port-check",
-    "dir-check",
-    // 写类，需要 container_id / project_name / image_ref / app_id
-    "start",
-    "stop",
-    "restart",
-    "pull",
-    "compose-start",
-    "compose-stop",
-    "compose-restart",
-    "compose-delete",
-    "rebuild",
+///
+/// 类型与占位说明取自 schema 的 field 1，保证提示里的示例可以照抄执行。
+pub const NEEDS_TARGET: &[(&str, &str, &str)] = &[
+    // 只读但需要目标
+    ("logs", "string", "容器 ID"),
+    ("port-check", "int", "端口号"),
+    ("dir-check", "string", "目录路径"),
+    // 写类
+    ("start", "string", "容器 ID"),
+    ("stop", "string", "容器 ID"),
+    ("restart", "string", "容器 ID"),
+    ("pull", "string", "镜像引用"),
+    ("compose-start", "string", "项目名"),
+    ("compose-stop", "string", "项目名"),
+    ("compose-restart", "string", "项目名"),
+    ("compose-delete", "string", "项目名"),
+    ("rebuild", "string", "应用 ID"),
 ];
 
 /// 把子命令映射为 `(套接字, gRPC 方法, operation)`。
@@ -73,14 +75,17 @@ pub fn resolve(action: &str) -> Result<(&'static str, &'static str, &'static str
 /// 两者都满足才允许建连。错误信息指向 `nascli call`，因为那是当前唯一能
 /// 显式指定字段的入口。
 pub fn require_target(action: &str, msg: &Message) -> Result<(), String> {
-    if !msg.is_empty() || !NEEDS_TARGET.contains(&action) {
+    if !msg.is_empty() {
         return Ok(());
     }
+    let Some(&(_, kind, hint)) = NEEDS_TARGET.iter().find(|(a, _, _)| *a == action) else {
+        return Ok(());
+    };
     let (socket, method, op) = resolve(action)?;
     let mut text = format!(
         "该动作需要目标参数，当前版本尚未支持参数化，已拒绝执行\n  method: {method} [{op}]\n  \
          请使用 nascli call 显式指定字段，例如：\n  \
-         nascli call {socket} {method} --field 1:string=<目标>"
+         nascli call {socket} {method} --field 1:{kind}=<{hint}>"
     );
     // 只读动作不需要 --yes，提示里也不该出现，否则会误导用户以为必须加。
     if !is_read_only(op) {
