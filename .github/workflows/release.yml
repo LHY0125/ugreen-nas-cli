@@ -163,6 +163,9 @@ jobs:
             exit 0
           }
           $assets = Get-ChildItem -LiteralPath 'assets' -File | ForEach-Object { $_.FullName }
+          if ($assets.Count -ne 3) {
+            throw "期望 3 个发布资产，实际 $($assets.Count) 个：$($assets -join ', ')"
+          }
           gh release create "$env:RELEASE_TAG" `
             --repo "$env:GITHUB_REPOSITORY" `
             --title "nascli $env:RELEASE_TAG" `
