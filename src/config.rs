@@ -11,12 +11,65 @@ pub struct Config {
     pub insecure: bool,
 }
 
-/// 默认配置文件名：相对于当前工作目录。
+/// 默认配置文件名。
 pub const DEFAULT_CONFIG_FILE: &str = "config.toml";
 
-/// 默认配置路径；实际使用时可被 `--config` 覆盖。
+/// 用于路径解析的目标平台。抽成参数而非只用 `cfg!`，
+/// 使得任意平台上的测试都能覆盖全部分支。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Platform {
+    Windows,
+    MacOs,
+    Linux,
+}
+
+/// 当前编译目标平台。
+fn current_platform() -> Platform {
+    if cfg!(windows) {
+        Platform::Windows
+    } else if cfg!(target_os = "macos") {
+        Platform::MacOs
+    } else {
+        Platform::Linux
+    }
+}
+
+/// 给定平台与环境变量值，算出配置根目录。
+///
+/// 三个参数分别对应 `%APPDATA%`、`$XDG_CONFIG_HOME`、`$HOME`；
+/// 各平台只使用其中相关的项，其余传 `None` 也不会误用。
+pub fn config_root_for(
+    platform: Platform,
+    appdata: Option<&Path>,
+    xdg: Option<&Path>,
+    home: Option<&Path>,
+) -> Option<PathBuf> {
+    match platform {
+        Platform::Windows => appdata.map(Path::to_path_buf),
+        Platform::MacOs => home.map(|h| h.join("Library").join("Application Support")),
+        Platform::Linux => xdg
+            .map(Path::to_path_buf)
+            .or_else(|| home.map(|h| h.join(".config"))),
+    }
+}
+
+/// 默认配置路径：`<配置根目录>/nascli/config.toml`。
+///
+/// 环境变量全部缺失时退回当前目录的 `config.toml`——这是最后手段，
+/// 正常安装环境下不会走到。
 pub fn default_config_path() -> PathBuf {
-    PathBuf::from(DEFAULT_CONFIG_FILE)
+    let appdata = std::env::var_os("APPDATA").map(PathBuf::from);
+    let xdg = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+
+    config_root_for(
+        current_platform(),
+        appdata.as_deref(),
+        xdg.as_deref(),
+        home.as_deref(),
+    )
+    .map(|root| root.join("nascli").join(DEFAULT_CONFIG_FILE))
+    .unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_FILE))
 }
 
 /// TOML 文件结构。
