@@ -1,11 +1,11 @@
 // 各命令模块由后续任务逐个加入，未加入的模块不能提前声明，否则无法编译：
 //   已加入: pub mod storage;（Task 8）、pub mod system;（Task 9）、pub mod docker;（Task 10）、
-//           pub mod apps; pub mod users; pub mod download;（Task 11）
-//   待加入: Task 12: pub mod files;
+//           pub mod apps; pub mod users; pub mod download;（Task 11）、pub mod files;（Task 12）
 
 pub mod apps;
 pub mod docker;
 pub mod download;
+pub mod files;
 pub mod storage;
 pub mod system;
 pub mod users;

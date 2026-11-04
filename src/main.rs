@@ -76,6 +76,26 @@ enum Command {
         #[arg(value_name = "ACTION")]
         action: String,
     },
+    /// 文件操作：浏览 / 属性 / 创建 / 删除 / 回收站
+    Fs {
+        /// 动作：stat | ls | cat | getfattr | recycle-status | path-perm | md5sum |
+        /// sha256sum | mkdir | touch | echo | rename | cpmv | del | restore | chtimes |
+        /// modify-acl | share-mkdir（du / find 为流式，不支持）
+        #[arg(value_name = "ACTION")]
+        action: String,
+        /// 目标路径（单参数动作用）
+        #[arg(long, default_value = "")]
+        path: String,
+        /// 分页页码（仅 ls）
+        #[arg(long)]
+        page: Option<u64>,
+        /// 每页条数（仅 ls）
+        #[arg(long)]
+        limit: Option<u64>,
+        /// 确认执行写类操作
+        #[arg(long)]
+        yes: bool,
+    },
     /// 通用调用（兜底）
     Call {
         /// 套接字 ID，例如 storage
@@ -287,6 +307,57 @@ fn main() -> ExitCode {
                 Err(code) => return code,
             };
             match nascli::commands::docker::run(&ctx.client, socket, method, &msg) {
+                Ok(resp) => {
+                    let data = match schema.response_type(method) {
+                        Some(t) => schema.message_to_json(&t, &resp),
+                        // schema 缺该方法签名时退回按字段号裸转，至少不丢数据。
+                        None => nascli::schema::to_json(&resp, &schema),
+                    };
+                    emit_ok(method, data);
+                    ExitCode::SUCCESS
+                }
+                Err(e) => ExitCode::from(emit_err(&e) as u8),
+            }
+        }
+        Command::Fs {
+            action,
+            path,
+            page,
+            limit,
+            yes,
+        } => {
+            // 先解析动作再判闸门：写类动作必须在建立连接前就被拒绝。
+            // du / find 是流式方法，解析阶段即失败，按「方法不支持」退出（5）。
+            let (socket, method, op) = match nascli::commands::files::resolve(&action) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("{e}");
+                    return ExitCode::from(5);
+                }
+            };
+            if let Err(e) = require_yes(op, method, &path, yes) {
+                eprintln!("{e}");
+                return ExitCode::from(2);
+            }
+            // 目标参数闸门：单参数动作缺 --path 时不能发空请求。
+            if let Err(e) = nascli::commands::files::require_target(&action, &path) {
+                eprintln!("{e}");
+                return ExitCode::from(2);
+            }
+            let msg = match nascli::commands::files::build_message(
+                &schema, method, &action, &path, page, limit,
+            ) {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("{e}");
+                    return ExitCode::from(2);
+                }
+            };
+            let ctx = match build_ctx() {
+                Ok(c) => c,
+                Err(code) => return code,
+            };
+            match ctx.client.call(socket, method, &msg) {
                 Ok(resp) => {
                     let data = match schema.response_type(method) {
                         Some(t) => schema.message_to_json(&t, &resp),

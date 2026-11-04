@@ -1,0 +1,121 @@
+use nascli::commands::files::{build_message, require_target, resolve};
+use nascli::schema::Schema;
+use nascli::wire::Value;
+
+const SAMPLE: &str = r#"{
+  "messages": {
+    "ugidl.filesystem.cli.FileDirListRequest": [
+      {"no": 3, "name": "path", "type": "string"},
+      {"no": 7, "name": "page", "type": "int32"},
+      {"no": 8, "name": "limit", "type": "int32"}
+    ],
+    "ugidl.filesystem.cli.StatRequest": [
+      {"no": 1, "name": "path", "type": "string"}
+    ]
+  },
+  "enums": {},
+  "services": {
+    "ugidl.filesystem.Filesystem": {
+      "CategoryOrFileDirList": {"in": "ugidl.filesystem.cli.FileDirListRequest", "out": "x", "server_streaming": false},
+      "Stat": {"in": "ugidl.filesystem.cli.StatRequest", "out": "x", "server_streaming": false}
+    }
+  },
+  "methods": {}
+}"#;
+
+fn schema() -> Schema {
+    Schema::from_json_str(SAMPLE).unwrap()
+}
+
+#[test]
+fn ls_uses_unary_file_dir_list() {
+    let (_, method, op) = resolve("ls").unwrap();
+    assert_eq!(method, "/ugidl.filesystem.Filesystem/CategoryOrFileDirList");
+    assert_eq!(op, "read");
+}
+
+#[test]
+fn ls_resolves_path_field_from_schema() {
+    let s = schema();
+    let (_, method, _) = resolve("ls").unwrap();
+    let m = build_message(&s, method, "ls", "/volume1/demo", Some(1), Some(50)).unwrap();
+    assert_eq!(
+        m.get(&3),
+        Some(&vec![Value::Bytes(b"/volume1/demo".to_vec())])
+    );
+    assert_eq!(m.get(&7), Some(&vec![Value::Varint(1)]));
+    assert_eq!(m.get(&8), Some(&vec![Value::Varint(50)]));
+}
+
+#[test]
+fn stat_resolves_path_field_from_schema() {
+    let s = schema();
+    let (_, method, _) = resolve("stat").unwrap();
+    let m = build_message(&s, method, "stat", "/volume1/demo", None, None).unwrap();
+    assert_eq!(
+        m.get(&1),
+        Some(&vec![Value::Bytes(b"/volume1/demo".to_vec())])
+    );
+}
+
+#[test]
+fn multi_param_action_is_rejected() {
+    let s = schema();
+    let (_, method, _) = resolve("rename").unwrap();
+    let e = build_message(&s, method, "rename", "/volume1/demo", None, None).unwrap_err();
+    assert!(e.contains("nascli call"));
+}
+
+#[test]
+fn du_is_reported_unsupported() {
+    let e = resolve("du").unwrap_err();
+    assert!(e.contains("流式"));
+}
+
+#[test]
+fn find_is_reported_unsupported() {
+    let e = resolve("find").unwrap_err();
+    assert!(e.contains("流式"));
+}
+
+#[test]
+fn delete_requires_yes_operation() {
+    let (_, method, op) = resolve("del").unwrap();
+    assert_eq!(method, "/ugidl.filesystem.Filesystem/DelPath");
+    assert_eq!(op, "delete");
+}
+
+#[test]
+fn rejects_unknown_action() {
+    assert!(resolve("nope").is_err());
+}
+
+/// 单参数动作缺少 `--path` 时必须 fail-closed，不能把空路径发给服务端。
+#[test]
+fn empty_path_is_rejected_for_single_path_actions() {
+    for action in ["stat", "ls", "cat", "getfattr", "del", "mkdir"] {
+        let err = require_target(action, "").expect_err(&format!("{action} 应被拒绝"));
+        assert!(err.contains("--path"), "action={action}：{err}");
+    }
+}
+
+/// 写类动作的提示应带 `--yes`，只读动作不该出现，避免误导。
+#[test]
+fn path_hint_mentions_yes_only_for_writes() {
+    let err = require_target("del", "").unwrap_err();
+    assert!(err.contains("--yes"), "{err}");
+    let err = require_target("stat", "").unwrap_err();
+    assert!(!err.contains("--yes"), "{err}");
+}
+
+/// 多参数动作由 `build_message` 统一拒绝，不归路径闸门管。
+#[test]
+fn multi_param_action_is_not_gated_by_path() {
+    assert!(require_target("rename", "").is_ok());
+}
+
+/// 路径非空时放行。
+#[test]
+fn non_empty_path_passes_target_gate() {
+    assert!(require_target("stat", "/volume1/demo").is_ok());
+}
