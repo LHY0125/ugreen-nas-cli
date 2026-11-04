@@ -2,3 +2,4 @@
 /spec/schema.json
 /spec/openapi/
 __pycache__/
+.superpowers/

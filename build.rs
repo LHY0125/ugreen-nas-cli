@@ -7,7 +7,7 @@ fn main() {
         panic!(
             "\n\n缺少 spec/schema.json。\n\
              请先运行：python tools/extract_schema.py --host <NAS 地址>\n\
-             （需要 UGPOA_TOKEN 与到 NAS 的 SSH 访问）\n"
+             （需要到 NAS 的 SSH 访问；运行 CLI 时另需 UGPOA_TOKEN 环境变量）\n"
         );
     }
 }

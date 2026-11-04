@@ -128,7 +128,7 @@ git commit -m "chore: scaffold nascli crate with build-time schema guard"
 - Consumes: 无
 - Produces:
   - `pub enum Value { Varint(u64), Bytes(Vec<u8>), Fixed32(u32), Fixed64(u64) }`
-  - `pub type Message = std::collections::BTreeMap<u32, Value>;`
+  - `pub type Message = std::collections::BTreeMap<u32, Vec<Value>>;`
   - `pub fn encode(msg: &Message) -> Vec<u8>`
   - `pub fn decode(raw: &[u8]) -> Message`
 
@@ -183,10 +183,13 @@ fn decodes_nested_bytes_as_opaque() {
 }
 
 #[test]
-fn repeated_field_last_wins() {
-    // 同一字段号出现两次时，BTreeMap 保留最后一个
+fn repeated_field_preserves_all_values() {
+    // 同一字段号出现两次时，两个值都要保留（protobuf repeated 语义）
     let raw = vec![0x08, 0x01, 0x08, 0x02];
-    assert_eq!(decode(&raw).get(&1), Some(&Value::Varint(2)));
+    assert_eq!(
+        decode(&raw).get(&1),
+        Some(&vec![Value::Varint(1), Value::Varint(2)])
+    );
 }
 ```
 
@@ -216,7 +219,7 @@ pub enum Value {
     Fixed64(u64),
 }
 
-pub type Message = BTreeMap<u32, Value>;
+pub type Message = BTreeMap<u32, Vec<Value>>;
 
 fn put_varint(out: &mut Vec<u8>, mut n: u64) {
     loop {
@@ -1025,15 +1028,14 @@ impl Client {
             return Ok(decode(&bytes));
         }
         let body = String::from_utf8_lossy(&bytes).to_string();
-        Err(classify(status, grpc_code, &body))
-    }
-
-    /// 供错误信息使用，避免把令牌写进日志。
-    pub fn redacted_token(&self) -> String {
-        redact(&self.token)
+        Err(classify(status, grpc_code, &body).scrub(&self.token))
     }
 }
 ```
+
+> 注意：`scrub` 由 Task 5 的修复轮引入（对应 `ApiError` 的输出侧脱敏），不是初版计划的一部分。
+> 若从零实现，请一并实现 `impl ApiError { pub fn scrub(self, token: &str) -> Self }`：对五个带字符串的变体做
+> `replace(token, &redact(token))`，`Unauthorized` 原样返回；并在 `token.is_empty()` 时直接返回 `self`。
 
 - [ ] **Step 4: 运行测试确认通过**
 
@@ -1076,7 +1078,13 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from extract_schema import parse_message, find_descriptors, build_schema  # noqa: E402
+from extract_schema import (  # noqa: E402
+    build_schema,
+    extract_enums,
+    find_descriptors,
+    parse_message,
+    type_name_of,
+)
 
 
 def varint(n: int) -> bytes:
@@ -1126,6 +1134,32 @@ def test_build_schema_shape():
     })
     assert schema["methods"]["/storage.Storage/VolumeList"]["operation"] == "read"
     assert set(schema) == {"messages", "enums", "services", "methods"}
+
+
+def test_type_name_of_maps_descriptor_codes_to_strings():
+    # FieldDescriptorProto.type: 9=string, 5=int32, 14=enum, 2=float
+    assert type_name_of({5: [9]}) == "string"
+    assert type_name_of({5: [5]}) == "int32"
+    assert type_name_of({5: [14]}) == "enum"
+    assert type_name_of({5: [2]}) == "float"
+    # 未知/缺失的编码退回 "unknown"，而不是抛异常
+    assert type_name_of({5: [999]}) == "unknown"
+    assert type_name_of({}) == "unknown"
+
+
+def test_extract_enums_reads_symbol_table():
+    def field_bytes(no, raw):
+        return varint((no << 3) | 2) + varint(len(raw)) + raw
+
+    # EnumValueDescriptorProto { name=1, number=2 }
+    value = field_bytes(1, b"SAFE") + varint((2 << 3) | 0) + varint(1)
+    # EnumDescriptorProto { name=1, value=2 }
+    enum = field_bytes(1, b"Mode") + field_bytes(2, value)
+    # FileDescriptorProto { name=1, package=2, enum_type=5 }
+    desc = field_bytes(1, b"demo/demo.proto") + field_bytes(2, b"demo.v1") + field_bytes(5, enum)
+    found = find_descriptors(desc, ["demo/demo.proto"])
+    enums = extract_enums(found)
+    assert enums["demo.v1.Mode"] == {"SAFE": 1}
 ```
 
 - [ ] **Step 2: 运行测试确认失败**
@@ -1242,6 +1276,24 @@ def _text(v) -> str:
     return v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v)
 
 
+PROTO_TYPE_NAMES = {
+    1: "double", 2: "float", 3: "int64", 4: "uint64", 5: "int32",
+    6: "fixed64", 7: "fixed32", 8: "bool", 9: "string", 10: "group",
+    11: "message", 12: "bytes", 13: "uint32", 14: "enum",
+    15: "sfixed32", 16: "sfixed64", 17: "sint32", 18: "sint64",
+}
+
+
+def type_name_of(field: dict[int, list]) -> str:
+    """把 protobuf FieldDescriptorProto.type 的枚举数字转成类型名。
+
+    有 type_name 的（message/enum）统一标记为 "message"/"enum"，
+    具体消息名放在 type_name 字段里供 schema 层递归使用。
+    """
+    code = field[5][0] if field.get(5) else 0
+    return PROTO_TYPE_NAMES.get(code, "unknown")
+
+
 def extract_messages(descriptors: dict[str, dict[int, list]]) -> dict[str, list]:
     messages: dict[str, list] = {}
     for desc in descriptors.values():
@@ -1259,11 +1311,30 @@ def extract_messages(descriptors: dict[str, dict[int, list]]) -> dict[str, list]
                 fields.append({
                     "no": fd[3][0],
                     "name": _text(fd[1][0]),
-                    "type": fd[5][0] if fd.get(5) else 0,
+                    "type": type_name_of(fd),
                     "type_name": _text(fd[6][0]).lstrip(".") if fd.get(6) else None,
                 })
             messages[fqn] = fields
     return messages
+
+
+def extract_enums(descriptors: dict[str, dict[int, list]]) -> dict[str, dict[str, int]]:
+    """提取顶层枚举：EnumDescriptorProto { name=1, value=2{ name=1, number=2 } }。"""
+    enums: dict[str, dict[str, int]] = {}
+    for desc in descriptors.values():
+        package = _text(desc[2][0]) if desc.get(2) else ""
+        for raw in desc.get(5, []):
+            ed = parse_message(raw, 0, len(raw))
+            if not ed.get(1):
+                continue
+            fqn = f"{package}.{_text(ed[1][0])}" if package else _text(ed[1][0])
+            values: dict[str, int] = {}
+            for raw_value in ed.get(2, []):
+                vd = parse_message(raw_value, 0, len(raw_value))
+                if vd.get(1) and vd.get(2):
+                    values[_text(vd[1][0])] = vd[2][0]
+            enums[fqn] = values
+    return enums
 
 
 def extract_services(descriptors: dict[str, dict[int, list]]) -> dict[str, dict]:
@@ -1301,7 +1372,7 @@ def build_schema(messages, enums, services, methods) -> dict:
 REMOTE_SCRIPT = r"""
 import json, re, sys, glob, os
 sys.path.insert(0, os.environ["TOOLS_DIR"])
-from extract_schema import find_descriptors, extract_messages, extract_services, PROTO_RE
+from extract_schema import find_descriptors, extract_messages, extract_enums, extract_services, PROTO_RE
 paths = []
 for root in ("/ugreen/@appstore", "/volume1/@appstore"):
     for pat in ("*/sbin/*", "*/bin/*", "*/cli/bin/*"):
@@ -1318,12 +1389,13 @@ for b in blobs.values():
     for m in PROTO_RE.findall(b):
         names.add(m.decode("utf-8", "replace"))
 names = sorted(n for n in names if not n.startswith("google/"))
-messages, services = {}, {}
+messages, enums, services = {}, {}, {}
 for p, b in blobs.items():
     d = find_descriptors(b, names)
     messages.update(extract_messages(d))
+    enums.update(extract_enums(d))
     services.update(extract_services(d))
-print(json.dumps({"messages": messages, "services": services}))
+print(json.dumps({"messages": messages, "enums": enums, "services": services}))
 """
 
 
@@ -1348,7 +1420,7 @@ def main() -> int:
 
     remote = json.loads(proc.stdout.decode("utf-8"))
     methods = collect_methods(args.host, args.ssh_user)
-    schema = build_schema(remote["messages"], {}, remote["services"], methods)
+    schema = build_schema(remote["messages"], remote["enums"], remote["services"], methods)
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -1392,7 +1464,7 @@ if __name__ == "__main__":
 ```bash
 cd tools && python -m pytest tests/test_extract.py -v
 ```
-Expected: 4 passed
+Expected: 6 passed
 
 - [ ] **Step 5: 对真机跑一次，确认产出**
 
@@ -1704,9 +1776,11 @@ git commit -m "feat(cli): command registry with list and generic call"
 - Test: `tests/storage_cmd.rs`
 
 **Interfaces:**
-- Consumes: `commands::Ctx`
-- Produces: `pub fn run(ctx: &Ctx, action: &str) -> Result<serde_json::Value, ApiError>`
+- Consumes: `commands::Ctx`（`Ctx` 只含 `client: Client` 字段；schema 由 `main.rs` 持有）
+- Produces: `pub fn resolve(action: &str) -> Result<(&'static str, &'static str), String>` 与
+  `pub fn run(client: &Client, action: &str) -> Result<Message, ApiError>`
   - `action` ∈ `disks | volumes | pools | smart`
+  - 返回 `Message`（原始 protobuf），由 `main.rs` 用 `schema::message_to_json` 转 JSON
 
 - [ ] **Step 1: 写失败测试 `tests/storage_cmd.rs`**
 

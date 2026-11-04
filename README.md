@@ -44,7 +44,7 @@ cargo install --path .
 
 | 变量 | 必填 | 默认 | 说明 |
 | --- | --- | --- | --- |
-| `UGNAS_HOST` | 是 | — | NAS 地址，支持 IP / DDNS / UGREENlink ID |
+| `UGNAS_HOST` | 是 | — | NAS 地址：可解析的主机名或 IP。DDNS / UGREENlink 请填写完整域名 |
 | `UGPOA_TOKEN` | 是 | — | 访问令牌，形如 `ugpoa_v1.*` |
 | `UGNAS_PORT` | 否 | `9443` | OpenCLI HTTPS 端口 |
 | `UGNAS_INSECURE` | 否 | `1` | 接受自签名证书；仅 `"0"` 表示校验证书 |

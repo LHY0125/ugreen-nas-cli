@@ -163,12 +163,10 @@ nascli call <socket-id> <method> [--field N:type=value]...
   "messages": {
     "<fqn>": [ {"no": 3, "name": "path", "type": "string"}, ... ]
   },
-  "enums": { "<fqn>": {"USER": 0, "SHARE": 1} },
+  "enums": { "<fqn>": {"SAFE": 1} },
   "services": {
-    "<socket-id>": {
-      "<Service>": {
-        "<Method>": {"in": "...", "out": "...", "server_streaming": false}
-      }
+    "<Service 全名>": {
+      "<Method>": {"in": "...", "out": "...", "server_streaming": false}
     }
   },
   "methods": { "<gRPC 方法>": {"socket": "...", "operation": "read", "role": "admin"} }
@@ -182,13 +180,22 @@ nascli call <socket-id> <method> [--field N:type=value]...
 ```rust
 enum Value { Varint(u64), Bytes(Vec<u8>), Fixed32(u32), Fixed64(u64) }
 
-fn encode(msg: &BTreeMap<u32, Value>) -> Vec<u8>;
-fn decode(raw: &[u8]) -> BTreeMap<u32, Value>;
-fn to_json(msg: &BTreeMap<u32, Value>, schema: &Schema) -> serde_json::Value;
+fn encode(msg: &BTreeMap<u32, Vec<Value>>) -> Vec<u8>;
+fn decode(raw: &[u8]) -> BTreeMap<u32, Vec<Value>>;
+fn to_json(msg: &BTreeMap<u32, Vec<Value>>, schema: &Schema) -> serde_json::Value;
 ```
 
 `to_json` 按 schema 还原字段名、递归展开嵌套消息、把枚举数字转成符号名。
 **未知字段号保留为 `"field_<N>"`**，固件升级新增字段时不丢数据。
+
+**repeated 字段的输出契约**：`Message` 的值是 `Vec<Value>`，同一字段号可出现多次。
+渲染时按元素个数决定形状——**多元素输出 JSON 数组，单元素输出标量，空则跳过**。
+因此消费方不能假设某个字段一定是数组或一定是标量（例如 `pools[0].disks` 是数组而
+`pools[0].volumes` 是标量，取决于实际元素个数）。
+
+> 已知限制：schema 目前不记录 `FieldDescriptorProto.label`，因此**无法区分 repeated 与单值**。
+> 对 `repeated int32`/`repeated enum` 这类 **packed 编码**的标量，wire 上表现为单个 Bytes 字段，
+> 当前会被当作 bytes 渲染（UTF-8 或 hex），而非解包成数组。
 
 ### 5.3 参数映射
 
@@ -321,6 +328,20 @@ OpenCLI 的 HTTP 代理只支持一元调用。以下方法为服务端流式，
 ### 9.3 请求限制
 
 令牌默认限制为 600 次/分钟、最大并发 10。CLI 不做额外限流，由调用方注意。
+
+### 9.4 `network ifaces` 恒返回空
+
+`GetIfaceList` 的请求类型是 `common.SingleString`，CLI 发送空串，服务端因此返回空列表。
+真正能列出网卡状态的 `GetInterfaceStatus` **未登记在 `openapi.json` 的 `methods` 中**，
+`call` 会按未知方法（fail-closed）拒绝执行。
+
+因此 `nascli network ifaces` 返回 `{"ok":true,"data":{}}` 且退出码 0——**这是「无数据」而非「无网卡」**。
+需要网卡信息时请用 `nascli network general`（含 `ipv4_gateway.iface_name` 等）。
+
+### 9.5 `system update-status` 恒返回空
+
+请求类型为 `google.protobuf.Empty`，空响应在协议层无法区分「无可用更新」与「服务端未填充」。
+CLI 侧无可做的判别，需上游补充字段。
 
 ---
 
