@@ -57,7 +57,7 @@
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 ls -l spec/schema.json
 git check-ignore -v spec/schema.json
 ```
@@ -80,7 +80,7 @@ __pycache__/
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 git check-ignore -v spec/schema.json; echo "exit=$?"
 ```
 
@@ -112,7 +112,7 @@ fn main() {
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 cargo build --release 2>&1 | tail -5
 ```
 
@@ -122,7 +122,7 @@ Expected: 编译成功，无 panic
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 git add .gitignore build.rs spec/schema.json
 git status --short
 git diff --cached --stat
@@ -246,7 +246,7 @@ use std::path::{Path, PathBuf};
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 cargo test --test config 2>&1 | tail -20
 ```
 
@@ -323,7 +323,7 @@ pub fn default_config_path() -> PathBuf {
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 cargo test --test config 2>&1 | tail -15
 ```
 
@@ -333,7 +333,7 @@ Expected: 全部通过（约 22 个用例），无失败
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 cargo build 2>&1 | tail -10
 ```
 
@@ -343,7 +343,7 @@ Expected: 编译成功。`src/main.rs` 此时仍在用 `default_value = "config.
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 cargo fmt && cargo clippy --all-targets -- -D warnings 2>&1 | tail -10
 ```
 
@@ -448,7 +448,7 @@ fn resolve_config_path(explicit: Option<PathBuf>) -> PathBuf {
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 cargo build 2>&1 | tail -15
 ```
 
@@ -459,27 +459,27 @@ Expected: 编译成功，无 `config: PathBuf` 相关的类型错误
 Run（PowerShell，逐条执行并观察 stderr 中的路径）：
 
 ```powershell
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 cargo build --release
 
 # 1) 默认：应显示 %APPDATA%\nascli\config.toml
 .\target\release\nascli.exe config path
 
 # 2) UGNAS_CONFIG 覆盖
-$env:UGNAS_CONFIG = "D:/tmp/alt.toml"
+$env:UGNAS_CONFIG = "<tmp>/alt.toml"
 .\target\release\nascli.exe config path
 Remove-Item Env:\UGNAS_CONFIG
 
 # 3) --config 覆盖（优先级最高）
-$env:UGNAS_CONFIG = "D:/tmp/alt.toml"
-.\target\release\nascli.exe --config D:/tmp/highest.toml config path
+$env:UGNAS_CONFIG = "<tmp>/alt.toml"
+.\target\release\nascli.exe --config <tmp>/highest.toml config path
 Remove-Item Env:\UGNAS_CONFIG
 ```
 
 Expected:
 1. 输出形如 `C:\Users\<user>\AppData\Roaming\nascli\config.toml`
-2. 输出 `D:/tmp/alt.toml`
-3. 输出 `D:/tmp/highest.toml`
+2. 输出 `<tmp>/alt.toml`
+3. 输出 `<tmp>/highest.toml`
 
 （若 `config path` 的输出实现与此不符，先看 `src/main.rs` 的 `run_config` 中 `Command::ConfigAction::Path` 分支，按其实际输出格式判断。）
 
@@ -487,7 +487,7 @@ Expected:
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 cargo test 2>&1 | tail -20
 ```
 
@@ -497,7 +497,7 @@ Expected: 全部通过
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 cargo fmt && cargo clippy --all-targets -- -D warnings 2>&1 | tail -10
 ```
 
@@ -652,7 +652,7 @@ nascli storage volumes                                  # 3. 平台默认目录
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 grep -rn "当前目录的 config.toml\|spec/schema.json 不入库\|spec/ 的产物" README.md CLAUDE.md docs/design.md config.example.toml
 ```
 
@@ -745,7 +745,7 @@ jobs:
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 python -c "import yaml,sys; yaml.safe_load(open('.github/workflows/ci.yml',encoding='utf-8')); print('YAML OK')"
 ```
 
@@ -755,7 +755,7 @@ Expected: `YAML OK`
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 ls tools/tests/ 2>&1 | head -5
 ```
 
@@ -776,7 +776,7 @@ cargo fmt --check、clippy -D warnings 与 cargo test；Python
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 git push origin main
 gh run list --workflow=ci.yml --limit 3
 ```
@@ -824,6 +824,7 @@ jobs:
             artifact: windows
           - os: ubuntu-latest
             artifact: linux
+          # 执行时 R9 裁决改为 macos-15-intel（macos-13 已于 2025-12-04 退役）
           - os: macos-13
             artifact: macos
 
@@ -949,7 +950,7 @@ jobs:
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 python -c "import yaml; yaml.safe_load(open('.github/workflows/release.yml',encoding='utf-8')); print('YAML OK')"
 ```
 
@@ -963,6 +964,8 @@ gh api repos/LHY0125/ugreen-nas-cli/actions/runners 2>&1 | head -5
 ```
 
 Expected: 能看到 runner 信息或空列表（403 表示 token 权限不足，不影响后续——`macos-13` 是 GitHub 托管的标准标签）
+
+> 偏差说明：执行时按 R9 裁决改用 `macos-15-intel`，因为 `macos-13` 已于 2025-12-04 退役。本段及上方 matrix 保留原稿，仅作记录。
 
 - [ ] **Step 4: 提交**
 
@@ -994,7 +997,7 @@ macos-13（Intel 宿主）以保证产出 x64 二进制。"
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 grep -n '^version' Cargo.toml
 gh release list --repo LHY0125/ugreen-nas-cli
 ```
@@ -1005,7 +1008,7 @@ Expected: 确认无同名 tag 已发布
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 git push origin main
 git tag -a v0.1.0 -m "nascli 首个发布版本"
 git push origin v0.1.0
@@ -1017,7 +1020,7 @@ Expected: tag 推送成功
 
 Run:
 ```bash
-cd D:/Code/doing_exercises/programs/nascli
+cd <repo>
 gh run list --workflow=release.yml --limit 3
 ```
 
@@ -1089,7 +1092,7 @@ Expected: 输出形如 `sha256:abc123...`。记下冒号后的 64 位十六进�
 
 Run:
 ```bash
-cd D:/settings/settings/Scoop/buckets/lhy
+cd <scoop-bucket-repo>
 powershell -NoProfile -Command "./bin/checkver.ps1 -App nascli -Dir . -ForceUpdate"
 powershell -NoProfile -Command "./bin/checkurls.ps1 -App nascli -Dir ."
 ```
@@ -1100,7 +1103,7 @@ Expected: `checkver` 输出 `nascli: 0.1.0`；`checkurls` 全部 URL 返回 200
 
 Run:
 ```bash
-cd D:/settings/settings/Scoop/buckets/lhy
+cd <scoop-bucket-repo>
 git add bucket/nascli.json
 git commit -m "新增 nascli：UGOS Pro OpenCLI 客户端"
 git push
