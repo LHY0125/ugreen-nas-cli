@@ -14,12 +14,13 @@ token = "ugpoa_v1...."     # 必填：访问令牌
 insecure = true            # 可选，默认 true（接受自签名证书）
 ```
 
-| 字段 | 必填 | 默认 | 说明 |
-|---|---|---|---|
-| `host` | 是 | — | NAS 主机名或 IP；不要带协议、路径或端口 |
-| `token` | 是 | — | 访问令牌，形如 `ugpoa_v1.*` |
-| `port` | 否 | `9443` | OpenCLI HTTPS 端口 |
-| `insecure` | 否 | `true` | 接受自签名证书；`false` 表示严格校验 |
+
+| 字段       | 必填 | 默认   | 说明                                    |
+| ------------ | ------ | -------- | ----------------------------------------- |
+| `host`     | 是   | —     | NAS 主机名或 IP；不要带协议、路径或端口 |
+| `token`    | 是   | —     | 访问令牌，形如 `ugpoa_v1.*`             |
+| `port`     | 否   | `9443` | OpenCLI HTTPS 端口                      |
+| `insecure` | 否   | `true` | 接受自签名证书；`false` 表示严格校验    |
 
 ```bash
 nascli --config /path/to/config.toml storage volumes
@@ -81,15 +82,16 @@ API 失败（服务端已返回响应）：
 
 ### 退出码
 
-| 退出码 | 含义 |
-|---|---|
-| `0` | 成功 |
-| `2` | 参数错误 / 写操作未加 `--yes` / 缺目标参数 / 配置文件缺失或解析失败；服务端 400 也是 2 |
-| `3` | 未授权（401 或 gRPC 16） |
-| `4` | 无权限（403、gRPC 7 或 `Access not allowed`） |
-| `5` | 方法不支持（本地拒绝的 `find` / `path-perm`，或服务端流式限制） |
-| `6` | 网络错误（连不上 NAS、端口、证书、超时） |
-| `7` | 服务端错误（含响应 protobuf 解析失败、固件未注册方法） |
+
+| 退出码 | 含义                                                                                   |
+| -------- | ---------------------------------------------------------------------------------------- |
+| `0`    | 成功                                                                                   |
+| `2`    | 参数错误 / 写操作未加 `--yes` / 缺目标参数 / 配置文件缺失或解析失败；服务端 400 也是 2 |
+| `3`    | 未授权（401 或 gRPC 16）                                                               |
+| `4`    | 无权限（403、gRPC 7 或 `Access not allowed`）                                          |
+| `5`    | 方法不支持（本地拒绝的 `find` / `path-perm`，或服务端流式限制）                        |
+| `6`    | 网络错误（连不上 NAS、端口、证书、超时）                                               |
+| `7`    | 服务端错误（含响应 protobuf 解析失败、固件未注册方法）                                 |
 
 ### 输出形状注意
 
@@ -103,38 +105,39 @@ API 失败（服务端已返回响应）：
 
 ## 4. 常用场景速查
 
-| 需求 | 命令 |
-|---|---|
-| 存储卷与容量 | `nascli storage volumes` |
-| 物理磁盘 | `nascli storage disks` |
-| SMART 健康 | `nascli storage smart` |
-| CPU 使用率/温度 | `nascli system cpu` |
-| 内存 | `nascli system mem` |
-| 网络吞吐 | `nascli system net` |
-| 磁盘指标 | `nascli system disk` |
-| 运行总览 | `nascli system overview` |
-| 系统版本与型号 | `nascli system identity` |
-| 进程占用 | `nascli system processes` |
-| 服务资源 | `nascli system services` |
-| UPS | `nascli system ups` |
-| 风扇/电源/LED/蜂鸣器 | `nascli system fan` / `power` / `led` / `beep` |
-| 网络配置（网关/DNS） | `nascli network general` |
-| 容器列表 | `nascli docker containers` |
-| 本地镜像 | `nascli docker images` |
-| Compose 项目 | `nascli docker compose` |
-| 容器日志 | 用 `nascli call .../GetContainerLogs --field 1:string=<容器ID>` |
-| 已安装应用 | `nascli apps list` |
-| 用户 / 用户组 | `nascli users list` / `groups` |
-| 下载任务 | `nascli download tasks` |
-| 列目录 | `nascli fs ls --path /volume1/demo --limit 50` |
-| 文件属性 | `nascli fs stat --path /volume1/demo` |
-| 目录容量 | `nascli fs du --path /volume1/demo` |
-| 读取文本文件 | `nascli fs cat --path /volume1/demo/file.txt` |
-| 文件 MD5 / SHA256 | `nascli fs md5sum --path /volume1/demo/file.txt` / `fs sha256sum` |
-| 回收站状态 | `nascli fs recycle-status --path /volume1/demo` |
-| 新建目录 / 文件 | `nascli fs mkdir --path /volume1/demo/new --yes` / `fs touch` |
-| 删除到回收站 | `nascli fs del --path /volume1/demo/old --yes` |
-| 从回收站恢复 | `nascli fs restore --path /volume1/demo/old --yes` |
+
+| 需求                 | 命令                                                              |
+| ---------------------- | ------------------------------------------------------------------- |
+| 存储卷与容量         | `nascli storage volumes`                                          |
+| 物理磁盘             | `nascli storage disks`                                            |
+| SMART 健康           | `nascli storage smart`                                            |
+| CPU 使用率/温度      | `nascli system cpu`                                               |
+| 内存                 | `nascli system mem`                                               |
+| 网络吞吐             | `nascli system net`                                               |
+| 磁盘指标             | `nascli system disk`                                              |
+| 运行总览             | `nascli system overview`                                          |
+| 系统版本与型号       | `nascli system identity`                                          |
+| 进程占用             | `nascli system processes`                                         |
+| 服务资源             | `nascli system services`                                          |
+| UPS                  | `nascli system ups`                                               |
+| 风扇/电源/LED/蜂鸣器 | `nascli system fan` / `power` / `led` / `beep`                    |
+| 网络配置（网关/DNS） | `nascli network general`                                          |
+| 容器列表             | `nascli docker containers`                                        |
+| 本地镜像             | `nascli docker images`                                            |
+| Compose 项目         | `nascli docker compose`                                           |
+| 容器日志             | 用 `nascli call .../GetContainerLogs --field 1:string=<容器ID>`   |
+| 已安装应用           | `nascli apps list`                                                |
+| 用户 / 用户组        | `nascli users list` / `groups`                                    |
+| 下载任务             | `nascli download tasks`                                           |
+| 列目录               | `nascli fs ls --path /volume1/demo --limit 50`                    |
+| 文件属性             | `nascli fs stat --path /volume1/demo`                             |
+| 目录容量             | `nascli fs du --path /volume1/demo`                               |
+| 读取文本文件         | `nascli fs cat --path /volume1/demo/file.txt`                     |
+| 文件 MD5 / SHA256    | `nascli fs md5sum --path /volume1/demo/file.txt` / `fs sha256sum` |
+| 回收站状态           | `nascli fs recycle-status --path /volume1/demo`                   |
+| 新建目录 / 文件      | `nascli fs mkdir --path /volume1/demo/new --yes` / `fs touch`     |
+| 删除到回收站         | `nascli fs del --path /volume1/demo/old --yes`                    |
+| 从回收站恢复         | `nascli fs restore --path /volume1/demo/old --yes`                |
 
 ---
 
@@ -149,10 +152,11 @@ nascli list --module storage
 nascli list --module docker
 ```
 
-| 选项 | 说明 |
-|---|---|
-| `--module <子串>` | 按套接字名或方法路径过滤 |
-| `--read-only` | 只列有效只读方法（排除本地强制写名单） |
+
+| 选项              | 说明                                   |
+| ------------------- | ---------------------------------------- |
+| `--module <子串>` | 按套接字名或方法路径过滤               |
+| `--read-only`     | 只列有效只读方法（排除本地强制写名单） |
 
 每行字段：
 
@@ -175,12 +179,13 @@ nascli list --module docker
 nascli storage <ACTION>
 ```
 
-| 动作 | gRPC 方法 | 说明 |
-|---|---|---|
-| `disks` | `/storage.Storage/DiskList` | 物理磁盘 |
-| `volumes` | `/storage.Storage/VolumeList` | 存储卷与容量 |
-| `pools` | `/storage.Storage/PoolList` | 存储池 |
-| `smart` | `/storage.Storage/AllDiskSmartInfo` | SMART；`data.value` 是 JSON 字符串 |
+
+| 动作      | gRPC 方法                           | 说明                               |
+| ----------- | ------------------------------------- | ------------------------------------ |
+| `disks`   | `/storage.Storage/DiskList`         | 物理磁盘                           |
+| `volumes` | `/storage.Storage/VolumeList`       | 存储卷与容量                       |
+| `pools`   | `/storage.Storage/PoolList`         | 存储池                             |
+| `smart`   | `/storage.Storage/AllDiskSmartInfo` | SMART；`data.value` 是 JSON 字符串 |
 
 ### 5.3 `system`
 
@@ -188,25 +193,26 @@ nascli storage <ACTION>
 nascli system <ACTION>
 ```
 
-| 动作 | gRPC 方法 |
-|---|---|
-| `identity` | `/ctlserv.Internal/GetOsIdentity` |
+
+| 动作            | gRPC 方法                                                 |
+| ----------------- | ----------------------------------------------------------- |
+| `identity`      | `/ctlserv.Internal/GetOsIdentity`                         |
 | `update-status` | `/ctlserv.Internal/GetOsUpdateStatus`（恒空，固件未提供） |
-| `cpu` | `/taskserv.TaskManage/GetCpuMetric` |
-| `mem` | `/taskserv.TaskManage/GetMemMetric` |
-| `net` | `/taskserv.TaskManage/GetNetTraffic` |
-| `disk` | `/taskserv.TaskManage/GetDiskMetric` |
-| `volume` | `/taskserv.TaskManage/GetVolumeMetric` |
-| `overview` | `/taskserv.TaskManage/GetRunOverview` |
-| `services` | `/taskserv.TaskManage/GetServiceResource` |
-| `processes` | `/taskserv.TaskManage/GetProcessResource` |
-| `ups` | `/ctlserv.Internal/GetUpsConfig` |
-| `power` | `/ctlserv.Hardware/GetPowerConfig` |
-| `fan` | `/ctlserv.Hardware/GetFanConfig` |
-| `led` | `/ctlserv.Hardware/GetLedConfig` |
-| `beep` | `/ctlserv.Hardware/GetBeepConfig` |
-| `cpu-config` | `/ctlserv.Hardware/GetCpuConfig` |
-| `zram` | `/ctlserv.Hardware/GetZramConfig` |
+| `cpu`           | `/taskserv.TaskManage/GetCpuMetric`                       |
+| `mem`           | `/taskserv.TaskManage/GetMemMetric`                       |
+| `net`           | `/taskserv.TaskManage/GetNetTraffic`                      |
+| `disk`          | `/taskserv.TaskManage/GetDiskMetric`                      |
+| `volume`        | `/taskserv.TaskManage/GetVolumeMetric`                    |
+| `overview`      | `/taskserv.TaskManage/GetRunOverview`                     |
+| `services`      | `/taskserv.TaskManage/GetServiceResource`                 |
+| `processes`     | `/taskserv.TaskManage/GetProcessResource`                 |
+| `ups`           | `/ctlserv.Internal/GetUpsConfig`                          |
+| `power`         | `/ctlserv.Hardware/GetPowerConfig`                        |
+| `fan`           | `/ctlserv.Hardware/GetFanConfig`                          |
+| `led`           | `/ctlserv.Hardware/GetLedConfig`                          |
+| `beep`          | `/ctlserv.Hardware/GetBeepConfig`                         |
+| `cpu-config`    | `/ctlserv.Hardware/GetCpuConfig`                          |
+| `zram`          | `/ctlserv.Hardware/GetZramConfig`                         |
 
 ### 5.4 `network`
 
@@ -214,10 +220,11 @@ nascli system <ACTION>
 nascli network <ACTION>
 ```
 
-| 动作 | gRPC 方法 | 说明 |
-|---|---|---|
-| `general` | `/ctlserv.Network/GetGeneralConfig` | 网关、DNS、网卡名等 |
-| `ifaces` | `/ctlserv.Network/GetIfaceList` | 当前固件恒返回空，改用 `general` |
+
+| 动作      | gRPC 方法                           | 说明                             |
+| ----------- | ------------------------------------- | ---------------------------------- |
+| `general` | `/ctlserv.Network/GetGeneralConfig` | 网关、DNS、网卡名等              |
+| `ifaces`  | `/ctlserv.Network/GetIfaceList`     | 当前固件恒返回空，改用 `general` |
 
 ### 5.5 `docker`
 
@@ -225,24 +232,25 @@ nascli network <ACTION>
 nascli docker <ACTION> [--yes]
 ```
 
-| 动作 | gRPC 方法 | 类型 | 目标参数 |
-|---|---|---|---|
-| `containers` | `/docker.Docker/ContainerList` | read | 无 |
-| `images` | `/docker.Docker/ShowLocalImage` | read | 无 |
-| `compose` | `/docker.Docker/GetComposeProjectList` | read | 无 |
-| `usage` | `/docker.Docker/GetAppUsage` | read | 无 |
-| `logs` | `/docker.Docker/GetContainerLogs` | read | 容器 ID |
-| `port-check` | `/docker.Docker/CheckPortOccupiedByContainer` | read | 端口 |
-| `dir-check` | `/docker.Docker/CheckDirUsedByContainer` | read | 目录 |
-| `pull` | `/docker.Docker/PullImage` | write | 镜像引用 |
-| `start` | `/docker.Docker/StartContainer` | execute | 容器 ID |
-| `stop` | `/docker.Docker/StopContainer` | execute | 容器 ID |
-| `restart` | `/docker.Docker/RestartContainer` | execute | 容器 ID |
-| `compose-start` | `/docker.Docker/StartComposeProject` | execute | 项目名 |
-| `compose-stop` | `/docker.Docker/StopComposeProject` | execute | 项目名 |
-| `compose-restart` | `/docker.Docker/RestartComposeProject` | execute | 项目名 |
-| `compose-delete` | `/docker.Docker/DeleteComposeProject` | delete | 项目名 |
-| `rebuild` | `/docker.Docker/RebuildContainerApp` | execute | 应用 ID |
+
+| 动作              | gRPC 方法                                     | 类型    | 目标参数 |
+| ------------------- | ----------------------------------------------- | --------- | ---------- |
+| `containers`      | `/docker.Docker/ContainerList`                | read    | 无       |
+| `images`          | `/docker.Docker/ShowLocalImage`               | read    | 无       |
+| `compose`         | `/docker.Docker/GetComposeProjectList`        | read    | 无       |
+| `usage`           | `/docker.Docker/GetAppUsage`                  | read    | 无       |
+| `logs`            | `/docker.Docker/GetContainerLogs`             | read    | 容器 ID  |
+| `port-check`      | `/docker.Docker/CheckPortOccupiedByContainer` | read    | 端口     |
+| `dir-check`       | `/docker.Docker/CheckDirUsedByContainer`      | read    | 目录     |
+| `pull`            | `/docker.Docker/PullImage`                    | write   | 镜像引用 |
+| `start`           | `/docker.Docker/StartContainer`               | execute | 容器 ID  |
+| `stop`            | `/docker.Docker/StopContainer`                | execute | 容器 ID  |
+| `restart`         | `/docker.Docker/RestartContainer`             | execute | 容器 ID  |
+| `compose-start`   | `/docker.Docker/StartComposeProject`          | execute | 项目名   |
+| `compose-stop`    | `/docker.Docker/StopComposeProject`           | execute | 项目名   |
+| `compose-restart` | `/docker.Docker/RestartComposeProject`        | execute | 项目名   |
+| `compose-delete`  | `/docker.Docker/DeleteComposeProject`         | delete  | 项目名   |
+| `rebuild`         | `/docker.Docker/RebuildContainerApp`          | execute | 应用 ID  |
 
 > 需要目标参数的动作在类型化子命令里会 fail-closed（退出码 2），并提示改用 `nascli call`；写类动作同时需要 `--yes`。
 
@@ -254,14 +262,15 @@ nascli users <list|groups>
 nascli download tasks
 ```
 
-| 命令 | gRPC 方法 | 说明 |
-|---|---|---|
-| `apps list` | `/app.App/DetailList` | 已安装应用 |
-| `apps detail` | `/app.App/GetAppDetail` | 需要应用 ID → 用 `call` |
-| `apps status` | `/app.App/GetAppStatus` | 需要应用 ID → 用 `call`；字段 1 是 repeated `ids` |
-| `users list` | `/ctlserv.Internal/GetUgreenUserList` | 用户列表 |
-| `users groups` | `/ctlserv.Internal/GetCreatedGroupList` | 用户组 |
-| `download tasks` | `/download.DownloadService/BatchGetDownloadTask` | 下载任务 |
+
+| 命令             | gRPC 方法                                        | 说明                                               |
+| ------------------ | -------------------------------------------------- | ---------------------------------------------------- |
+| `apps list`      | `/app.App/DetailList`                            | 已安装应用                                         |
+| `apps detail`    | `/app.App/GetAppDetail`                          | 需要应用 ID → 用 `call`                           |
+| `apps status`    | `/app.App/GetAppStatus`                          | 需要应用 ID → 用 `call`；字段 1 是 repeated `ids` |
+| `users list`     | `/ctlserv.Internal/GetUgreenUserList`            | 用户列表                                           |
+| `users groups`   | `/ctlserv.Internal/GetCreatedGroupList`          | 用户组                                             |
+| `download tasks` | `/download.DownloadService/BatchGetDownloadTask` | 下载任务                                           |
 
 ### 5.7 `fs`
 
@@ -269,28 +278,29 @@ nascli download tasks
 nascli fs <ACTION> [--path <路径>] [--page N] [--limit N] [--yes]
 ```
 
-| 动作 | gRPC 方法 | 类型 | 参数 | 说明 |
-|---|---|---|---|---|
-| `stat` | `/ugidl.filesystem.Filesystem/Stat` | read | `--path` | 属性 |
-| `ls` | `/ugidl.filesystem.Filesystem/CategoryOrFileDirList` | read | `--path` `--page` `--limit` | 列目录 |
-| `cat` | `/ugidl.filesystem.Filesystem/ReadFile` | read | `--path` | 读文件；最大 64 MiB |
-| `getfattr` | `/ugidl.filesystem.Filesystem/Getfattr` | read | `--path` | 扩展属性 |
-| `recycle-status` | `/ugidl.filesystem.Filesystem/GetRecycleStatus` | read | `--path` | 回收站状态 |
-| `md5sum` | `/ugidl.filesystem.Filesystem/Md5sum` | read | `--path` | 映射到请求字段 `paths` |
-| `sha256sum` | `/ugidl.filesystem.Filesystem/Sha256sum` | read | `--path` | 映射到请求字段 `paths` |
-| `du` | `/ugidl.filesystem.Filesystem/Du` | read | `--path` | 大目录可能触发流式限制，退出 5 |
-| `mkdir` | `/ugidl.filesystem.Filesystem/CreateDir` | write | `--path` + `--yes` | 新建目录 |
-| `touch` | `/ugidl.filesystem.Filesystem/CreateFile` | write | `--path` + `--yes` | 新建空文件 |
-| `del` | `/ugidl.filesystem.Filesystem/DelPath` | delete | `--path` + `--yes` | **默认移入回收站** |
-| `restore` | `/ugidl.filesystem.Filesystem/RecoverFromRecycle` | write | `--path` + `--yes` | 从回收站恢复 |
-| `rename` | `/ugidl.filesystem.Filesystem/Rename` | write | 用 `call` | 目录 + 旧名 + 新名 |
-| `cpmv` | `/ugidl.filesystem.Filesystem/CpMovePath` | write | 用 `call` | 复制/移动，多字段 |
-| `echo` | `/ugidl.filesystem.Filesystem/WriteFile` | write | 用 `call` | 写文件内容 |
-| `chtimes` | `/ugidl.filesystem.Filesystem/Chtimes` | write | 用 `call` | 修改 atime/mtime |
-| `modify-acl` | `/ugidl.filesystem.Filesystem/ModifyPathAcl` | write | 用 `call` | 需要嵌套 `permissions`，当前 `--field` 无法表达 |
-| `share-mkdir` | `/ugidl.filesystem.Filesystem/CreateShareFolder` | write | 用 `call` | volume/name/quota 等 |
-| `find` | `/ugidl.filesystem.Filesystem/Find` | read | 本地拒绝 | 服务端流式，退出 5 |
-| `path-perm` | `/ugidl.filesystem.Filesystem/GetPathPermission` | — | 本地拒绝 | 当前 schema 未登记，退出 5 |
+
+| 动作             | gRPC 方法                                            | 类型   | 参数                        | 说明                                            |
+| ------------------ | ------------------------------------------------------ | -------- | ----------------------------- | ------------------------------------------------- |
+| `stat`           | `/ugidl.filesystem.Filesystem/Stat`                  | read   | `--path`                    | 属性                                            |
+| `ls`             | `/ugidl.filesystem.Filesystem/CategoryOrFileDirList` | read   | `--path` `--page` `--limit` | 列目录                                          |
+| `cat`            | `/ugidl.filesystem.Filesystem/ReadFile`              | read   | `--path`                    | 读文件；最大 64 MiB                             |
+| `getfattr`       | `/ugidl.filesystem.Filesystem/Getfattr`              | read   | `--path`                    | 扩展属性                                        |
+| `recycle-status` | `/ugidl.filesystem.Filesystem/GetRecycleStatus`      | read   | `--path`                    | 回收站状态                                      |
+| `md5sum`         | `/ugidl.filesystem.Filesystem/Md5sum`                | read   | `--path`                    | 映射到请求字段 `paths`                          |
+| `sha256sum`      | `/ugidl.filesystem.Filesystem/Sha256sum`             | read   | `--path`                    | 映射到请求字段 `paths`                          |
+| `du`             | `/ugidl.filesystem.Filesystem/Du`                    | read   | `--path`                    | 大目录可能触发流式限制，退出 5                  |
+| `mkdir`          | `/ugidl.filesystem.Filesystem/CreateDir`             | write  | `--path` + `--yes`          | 新建目录                                        |
+| `touch`          | `/ugidl.filesystem.Filesystem/CreateFile`            | write  | `--path` + `--yes`          | 新建空文件                                      |
+| `del`            | `/ugidl.filesystem.Filesystem/DelPath`               | delete | `--path` + `--yes`          | **默认移入回收站**                              |
+| `restore`        | `/ugidl.filesystem.Filesystem/RecoverFromRecycle`    | write  | `--path` + `--yes`          | 从回收站恢复                                    |
+| `rename`         | `/ugidl.filesystem.Filesystem/Rename`                | write  | 用 `call`                   | 目录 + 旧名 + 新名                              |
+| `cpmv`           | `/ugidl.filesystem.Filesystem/CpMovePath`            | write  | 用 `call`                   | 复制/移动，多字段                               |
+| `echo`           | `/ugidl.filesystem.Filesystem/WriteFile`             | write  | 用 `call`                   | 写文件内容                                      |
+| `chtimes`        | `/ugidl.filesystem.Filesystem/Chtimes`               | write  | 用 `call`                   | 修改 atime/mtime                                |
+| `modify-acl`     | `/ugidl.filesystem.Filesystem/ModifyPathAcl`         | write  | 用 `call`                   | 需要嵌套 `permissions`，当前 `--field` 无法表达 |
+| `share-mkdir`    | `/ugidl.filesystem.Filesystem/CreateShareFolder`     | write  | 用 `call`                   | volume/name/quota 等                            |
+| `find`           | `/ugidl.filesystem.Filesystem/Find`                  | read   | 本地拒绝                    | 服务端流式，退出 5                              |
+| `path-perm`      | `/ugidl.filesystem.Filesystem/GetPathPermission`     | —     | 本地拒绝                    | 当前 schema 未登记，退出 5                      |
 
 > `fs` 路径必须落在**共享文件夹**内，例如 `/volume1/demo`、`/volume2/demo`。卷根 `/volume1`、`/volume2` 会返回 `ACCESS_DENIED`（退出码 4）。
 
@@ -358,17 +368,18 @@ nascli call ugreen.filemgr.internal.grpc \
 
 ## 7. 已知限制
 
-| 能力 | 现象 | 处理 |
-|---|---|---|
-| `fs find` | 本地拒绝，退出 5 | 不要重试；需要搜索时由用户在 NAS 界面操作 |
-| `fs du` | 大目录可能触发流式限制，退出 5 | 先试 `fs du`；失败则换更小目录或 `call` |
-| `fs path-perm` | 本地拒绝，退出 5 | 当前固件未登记 `GetPathPermission`，不可用 |
-| `network ifaces` | 恒返回空 `data` | 用 `network general` |
-| `system update-status` | 恒返回空 `data` | 固件未提供，不要据此判断“无更新” |
-| 目标参数动作 | 类型化命令退出 2，提示用 `call` | 用 `call --field 1:...` |
-| 多参数 fs 动作 | `rename` / `cpmv` / `echo` / `chtimes` / `modify-acl` / `share-mkdir` 类型化入口拒绝 | 用 `call` |
-| `modify-acl` | 嵌套 `permissions` 无法用 `--field` 构造 | 当前 CLI 不可用 |
-| repeated 输出 | 单元素是标量，多元素是数组 | 解析时两种都兼容 |
+
+| 能力                   | 现象                                                                                 | 处理                                       |
+| ------------------------ | -------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `fs find`              | 本地拒绝，退出 5                                                                     | 不要重试；需要搜索时由用户在 NAS 界面操作  |
+| `fs du`                | 大目录可能触发流式限制，退出 5                                                       | 先试 `fs du`；失败则换更小目录或 `call`    |
+| `fs path-perm`         | 本地拒绝，退出 5                                                                     | 当前固件未登记 `GetPathPermission`，不可用 |
+| `network ifaces`       | 恒返回空 `data`                                                                      | 用 `network general`                       |
+| `system update-status` | 恒返回空 `data`                                                                      | 固件未提供，不要据此判断“无更新”         |
+| 目标参数动作           | 类型化命令退出 2，提示用 `call`                                                      | 用 `call --field 1:...`                    |
+| 多参数 fs 动作         | `rename` / `cpmv` / `echo` / `chtimes` / `modify-acl` / `share-mkdir` 类型化入口拒绝 | 用 `call`                                  |
+| `modify-acl`           | 嵌套 `permissions` 无法用 `--field` 构造                                             | 当前 CLI 不可用                            |
+| repeated 输出          | 单元素是标量，多元素是数组                                                           | 解析时两种都兼容                           |
 
 ---
 
