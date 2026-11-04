@@ -1,7 +1,8 @@
 use nascli::config::{
-    config_root_for, default_config_path, redact, Config, ConfigError, Platform,
-    DEFAULT_CONFIG_FILE,
+    config_root_for, default_config_path, env_path, redact, resolve_config_path, Config,
+    ConfigError, Platform, DEFAULT_CONFIG_FILE,
 };
+use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempfile::{tempdir, NamedTempFile};
@@ -80,6 +81,47 @@ fn default_path_ends_with_nascli_config_toml() {
         "默认路径应以 nascli/config.toml 结尾，实际为 {}",
         path.display()
     );
+}
+
+#[test]
+fn explicit_config_beats_env_value() {
+    let explicit = PathBuf::from("D:/tmp/explicit.toml");
+    let from_env = PathBuf::from("D:/tmp/env.toml");
+    assert_eq!(
+        resolve_config_path(Some(explicit.clone()), Some(from_env)),
+        explicit
+    );
+}
+
+#[test]
+fn env_value_beats_platform_default() {
+    let from_env = PathBuf::from("D:/tmp/env.toml");
+    assert_eq!(resolve_config_path(None, Some(from_env.clone())), from_env);
+}
+
+#[test]
+fn falls_back_to_platform_default() {
+    assert_eq!(resolve_config_path(None, None), default_config_path());
+}
+
+#[test]
+fn empty_env_value_is_treated_as_unset() {
+    assert_eq!(env_path(Some(OsString::new())), None);
+    assert_eq!(env_path(None), None);
+    assert_eq!(
+        env_path(Some(OsString::from("/xdg"))),
+        Some(PathBuf::from("/xdg"))
+    );
+}
+
+#[test]
+fn empty_xdg_falls_back_to_home_dot_config() {
+    // 与 default_config_path 内部一致：先经 env_path 过滤空串，再交给 config_root_for。
+    // XDG_CONFIG_HOME="" 属「已设置但为空」，必须被当作未设置。
+    let xdg = env_path(Some(OsString::new()));
+    let home = Some(Path::new("/home/u"));
+    let root = config_root_for(Platform::Linux, None, xdg.as_deref(), home);
+    assert_eq!(root, Some(PathBuf::from("/home/u/.config")));
 }
 
 #[test]

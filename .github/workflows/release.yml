@@ -139,6 +139,10 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          # 原生命令的 stdout 由 PowerShell 按 [Console]::OutputEncoding 解码；
+          # git 输出 UTF-8，Windows runner 的控制台默认非 UTF-8，不显式指定会让
+          # 中文提交信息变成乱码写进 Release 说明。
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
           $tag = $env:RELEASE_TAG
           $notes = @("## nascli $tag", "")
           # 首个 tag 没有前驱，git describe 会失败（退出 128）——这是预期情况。

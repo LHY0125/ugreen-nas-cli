@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::ffi::OsString;
 use std::fmt;
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -53,14 +54,22 @@ pub fn config_root_for(
     }
 }
 
+/// 环境变量的原始值 → 路径；「已设置但为空串」一律视为未设置。
+///
+/// `std::env::var_os` 对空值返回 `Some("")`，而 `PathBuf::from("")` 是合法的
+/// 相对路径——不拦截就会让配置落到当前目录，违背「正常环境不读 CWD」的承诺。
+pub fn env_path(value: Option<OsString>) -> Option<PathBuf> {
+    value.filter(|v| !v.is_empty()).map(PathBuf::from)
+}
+
 /// 默认配置路径：`<配置根目录>/nascli/config.toml`。
 ///
-/// 环境变量全部缺失时退回当前目录的 `config.toml`——这是最后手段，
+/// 环境变量全部缺失（或为空串）时退回当前目录的 `config.toml`——这是最后手段，
 /// 正常安装环境下不会走到。
 pub fn default_config_path() -> PathBuf {
-    let appdata = std::env::var_os("APPDATA").map(PathBuf::from);
-    let xdg = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let appdata = env_path(std::env::var_os("APPDATA"));
+    let xdg = env_path(std::env::var_os("XDG_CONFIG_HOME"));
+    let home = env_path(std::env::var_os("HOME"));
 
     config_root_for(
         current_platform(),
@@ -70,6 +79,13 @@ pub fn default_config_path() -> PathBuf {
     )
     .map(|root| root.join("nascli").join(DEFAULT_CONFIG_FILE))
     .unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_FILE))
+}
+
+/// 决议配置路径：显式参数 > 环境变量值 > 平台默认目录。
+///
+/// 环境变量由调用方读取后传入，这里保持纯函数，便于直接单测三级优先级的接缝。
+pub fn resolve_config_path(explicit: Option<PathBuf>, env_value: Option<PathBuf>) -> PathBuf {
+    explicit.or(env_value).unwrap_or_else(default_config_path)
 }
 
 /// TOML 文件结构。
