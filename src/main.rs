@@ -47,6 +47,17 @@ enum Command {
         #[arg(value_name = "ACTION")]
         action: String,
     },
+    /// Docker 管理：容器 / 镜像 / Compose / 占用检查
+    Docker {
+        /// 动作：containers | images | compose | logs | port-check | dir-check | usage |
+        /// pull | start | stop | restart | compose-start | compose-stop | compose-restart |
+        /// compose-delete | rebuild
+        #[arg(value_name = "ACTION")]
+        action: String,
+        /// 确认执行写类操作
+        #[arg(long)]
+        yes: bool,
+    },
     /// 通用调用（兜底）
     Call {
         /// 套接字 ID，例如 storage
@@ -182,6 +193,41 @@ fn main() -> ExitCode {
                 &schema,
                 nascli::commands::system::resolve_network(&action),
             )
+        }
+        Command::Docker { action, yes } => {
+            // 先解析动作再判闸门：写类动作必须在建立连接前就被拒绝。
+            let (socket, method, op) = match nascli::commands::docker::resolve(&action) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("{e}");
+                    return ExitCode::from(2);
+                }
+            };
+            if let Err(e) = require_yes(op, method, &action, yes) {
+                eprintln!("{e}");
+                return ExitCode::from(2);
+            }
+            let ctx = match build_ctx() {
+                Ok(c) => c,
+                Err(code) => return code,
+            };
+            match nascli::commands::docker::run(
+                &ctx.client,
+                socket,
+                method,
+                &nascli::commands::docker::empty(),
+            ) {
+                Ok(resp) => {
+                    let data = match schema.response_type(method) {
+                        Some(t) => schema.message_to_json(&t, &resp),
+                        // schema 缺该方法签名时退回按字段号裸转，至少不丢数据。
+                        None => nascli::schema::to_json(&resp, &schema),
+                    };
+                    emit_ok(method, data);
+                    ExitCode::SUCCESS
+                }
+                Err(e) => ExitCode::from(emit_err(&e) as u8),
+            }
         }
         Command::Call {
             socket,
