@@ -209,6 +209,9 @@ fn main() -> ExitCode {
                     "socket": info.socket,
                     "operation": info.operation,
                     "role": info.role,
+                    // 流式方法不被 HTTP 接口支持，标注出来避免智能体反复试错
+                    "server_streaming": schema.is_streaming(path),
+                    "supported": !schema.is_streaming(path),
                 }));
             }
             emit_ok("list", serde_json::Value::Array(rows));

@@ -127,6 +127,24 @@ impl Schema {
             .map(|sig| sig.output.clone())
     }
 
+    /// 该方法是否为服务端流式 RPC。
+    ///
+    /// 流式方法不受 OpenCLI 的 HTTP 接口支持（调用会返回 `cardinality violation`），
+    /// `list` 用它标注哪些方法不可用，避免智能体反复试错。
+    pub fn is_streaming(&self, method_path: &str) -> bool {
+        let Some(rest) = method_path.strip_prefix('/') else {
+            return false;
+        };
+        let Some((service, method)) = rest.split_once('/') else {
+            return false;
+        };
+        self.services
+            .get(service)
+            .and_then(|m| m.get(method))
+            .map(|sig| sig.server_streaming)
+            .unwrap_or(false)
+    }
+
     /// 按字段名查字段号。命令表用名字而非数字，固件升级换号也不会错。
     pub fn field_no(&self, type_name: &str, field_name: &str) -> Option<u32> {
         self.messages
