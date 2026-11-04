@@ -138,6 +138,20 @@ CLI 只读取一个 TOML 文件。路径决议顺序：`--config <path>` →
 上游权限表把少量会改状态的方法标成 `read`（搜索任务/查找任务类）。维护
 `FORCED_WRITE_METHODS` 时，必须同步更新 `list --read-only` 的过滤行为与测试。
 
+## 发布
+
+打 `v*` tag 触发 `.github/workflows/release.yml`，矩阵构建三平台并创建 GitHub Release。
+
+**改版本号时必须同步 `Cargo.lock`**：workflow 用 `cargo build --release --locked`，而
+`Cargo.lock` 也记录根包版本。只改 `Cargo.toml` 不改 lock 会让三平台构建同时失败
+（`cannot update the lock file ... because --locked was passed`）。
+
+```bash
+# 改完 Cargo.toml 的 version 后
+cargo update --workspace    # 只刷新根包版本条目，不升级依赖
+git add Cargo.toml Cargo.lock
+```
+
 ## 仓库约定
 
 - 单 crate，`edition = "2021"`，不使用 workspace。

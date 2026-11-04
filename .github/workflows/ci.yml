@@ -44,7 +44,9 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: 测试
-        run: cargo test
+        # --locked：与 release 的 `cargo build --release --locked` 保持同一契约，
+        # 让「改了 Cargo.toml 却没更新 Cargo.lock」在 PR 阶段就红，而不是等到打 tag。
+        run: cargo test --locked
 
       # Python 提取器的测试只在 Linux 跑一次，避免三平台重复。
       # 用 setup-python 提供的解释器：Ubuntu 24.04 起系统 Python 受 PEP 668
